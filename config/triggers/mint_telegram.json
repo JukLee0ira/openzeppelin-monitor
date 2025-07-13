@@ -1,0 +1,16 @@
+{
+  "mint_telegram": {
+    "name": "Mint Telegram Notification",
+    "trigger_type": "telegram",
+    "config": {
+      "token": {
+        "type": "plain",
+        "value": "<your telegram bot token>"
+      },
+      "chat_id": "<you chat_id>",
+      "message": {
+        "title": "Suspicious Large Token Mint Detected",
+        "body": "🚨 Large Token Mint Alert\n\n📤 Mint Details:\n- Amount: ${events.0.args.amount}\n- Recipient: ${events.0.args.to}\n- Minter: ${transaction.from}\n\n📊 Transaction Info:\n- Contract: ${transaction.to}\n- Tx Hash: ${transaction.hash}\n Scan: https://explorer.apothem.network/tx/${transaction.hash}"      }
+    }
+  }
+}
