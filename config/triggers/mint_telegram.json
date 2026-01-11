@@ -1,16 +1,17 @@
 {
   "mint_telegram": {
-    "name": "Mint Telegram Notification",
+  "name": "USDC Transfer Telegram Notification",
     "trigger_type": "telegram",
     "config": {
       "token": {
         "type": "plain",
-        "value": "<your telegram bot token>"
+        "value": "7200824113:AAEF8vujtCKDghBXuj2IDhAeLMd2RCffrGs"
       },
-      "chat_id": "<you chat_id>",
+      "chat_id": "7888743888",
       "message": {
-        "title": "Suspicious Large Token Mint Detected",
-        "body": "🚨 Large Token Mint Alert\n\n📤 Mint Details:\n- Amount: ${events.0.args.amount}\n- Recipient: ${events.0.args.to}\n- Minter: ${transaction.from}\n\n📊 Transaction Info:\n- Contract: ${transaction.to}\n- Tx Hash: ${transaction.hash}\n Scan: https://explorer.apothem.network/tx/${transaction.hash}"      }
+      "title": "USDC Transfer Detected on XDC Mainnet",
+      "body": "USDC Transfer Alert (XDC Mainnet)\n\n📤 Transfer Details:\n- Amount: ${events.0.args.value}\n- From: ${events.0.args.from}\n- To: ${events.0.args.to}\n\n📊 Transaction Info:\n- Contract: ${transaction.to}\n- Tx Hash: ${transaction.hash}"
+      }
     }
   }
 }
