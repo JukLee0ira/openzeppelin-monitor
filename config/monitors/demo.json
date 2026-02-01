@@ -1,7 +1,7 @@
 {
   "name": "USDC Transfers - XDC Mainnet",
   "networks": ["xdc_mainnet"],
-  "paused": false,
+  "paused": true,
   "addresses": [
     {
       "address": "0xfa2958cb79b0491cc627c1557f441ef849ca8eb1",
@@ -136,13 +136,6 @@
     ],
     "transactions": []
   },
-  "trigger_conditions": [
-    {
-      "script_path": "./config/filters/filter_block_number.sh",
-      "language": "Bash",
-      "arguments": ["--verbose"],
-      "timeout_ms": 1000
-    }
-  ],
-  "triggers": ["mint_telegram"]
+  "trigger_conditions": [],
+  "triggers": []
 }

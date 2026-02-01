@@ -9,7 +9,7 @@ use std::{
 	collections::{BTreeMap, HashMap},
 	sync::Arc,
 };
-use tokio::sync::RwLock;
+use tokio::sync::{Mutex, RwLock};
 use tokio_cron_scheduler::{Job, JobScheduler};
 use tracing::instrument;
 
@@ -160,6 +160,9 @@ where
 		let block_handler = self.block_handler.clone();
 		let trigger_handler = self.trigger_handler.clone();
 		let block_tracker = self.block_tracker.clone();
+		// Prevent overlapping runs when cron interval is shorter than the time it takes to process
+		// a batch of blocks (e.g., "*/1 * * * * *").
+		let processing_lock = Arc::new(Mutex::new(()));
 
 		let job = Job::new_async(self.network.cron_schedule.as_str(), move |_uuid, _l| {
 			let network = network.clone();
@@ -168,7 +171,9 @@ where
 			let block_tracker = block_tracker.clone();
 			let rpc_client = rpc_client.clone();
 			let trigger_handler = trigger_handler.clone();
+			let processing_lock = processing_lock.clone();
 			Box::pin(async move {
+				let _guard = processing_lock.lock().await;
 				let _ = process_new_blocks(
 					&network,
 					&rpc_client,

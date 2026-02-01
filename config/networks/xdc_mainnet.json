@@ -15,8 +15,8 @@
   "chain_id": 50,
   "block_time_ms": 12000,
   "confirmation_blocks": 6,
-  "cron_schedule": "0 */1 * * * *",
-  "max_past_blocks": 100,
+  "cron_schedule": "*/1 * * * * *",
+  "max_past_blocks": 20,
   "store_blocks": true
 }
 

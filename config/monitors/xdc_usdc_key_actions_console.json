@@ -1,0 +1,108 @@
+{
+  "name": "XDC USDC + Bridge Key Actions (console)",
+  "networks": ["xdc_mainnet"],
+  "paused": false,
+  "addresses": [
+    {
+      "address": "0xfa2958cb79b0491cc627c1557f441ef849ca8eb1",
+      "contract_spec": [
+        {
+          "anonymous": false,
+          "inputs": [
+            { "indexed": true, "internalType": "address", "name": "from", "type": "address" },
+            { "indexed": true, "internalType": "address", "name": "to", "type": "address" },
+            { "indexed": false, "internalType": "uint256", "name": "value", "type": "uint256" }
+          ],
+          "name": "Transfer",
+          "type": "event"
+        },
+        {
+          "anonymous": false,
+          "inputs": [
+            { "indexed": true, "internalType": "address", "name": "minter", "type": "address" },
+            { "indexed": true, "internalType": "address", "name": "to", "type": "address" },
+            { "indexed": false, "internalType": "uint256", "name": "amount", "type": "uint256" }
+          ],
+          "name": "Mint",
+          "type": "event"
+        },
+        { "anonymous": false, "inputs": [], "name": "Pause", "type": "event" },
+        {
+          "anonymous": false,
+          "inputs": [{ "indexed": false, "internalType": "address", "name": "implementation", "type": "address" }],
+          "name": "Upgraded",
+          "type": "event"
+        },
+        {
+          "inputs": [{ "internalType": "address", "name": "newImplementation", "type": "address" }],
+          "name": "upgradeTo",
+          "outputs": [],
+          "stateMutability": "nonpayable",
+          "type": "function"
+        },
+        {
+          "inputs": [
+            { "internalType": "address", "name": "newImplementation", "type": "address" },
+            { "internalType": "bytes", "name": "data", "type": "bytes" }
+          ],
+          "name": "upgradeToAndCall",
+          "outputs": [],
+          "stateMutability": "payable",
+          "type": "function"
+        }
+      ]
+    },
+    {
+      "address": "0x0000000000000000000000000000000000000000",
+      "contract_spec": [
+        {
+          "anonymous": false,
+          "inputs": [
+            { "indexed": true, "internalType": "address", "name": "from", "type": "address" },
+            { "indexed": true, "internalType": "address", "name": "to", "type": "address" },
+            { "indexed": false, "internalType": "uint256", "name": "value", "type": "uint256" }
+          ],
+          "name": "Transfer",
+          "type": "event"
+        },
+        {
+          "anonymous": false,
+          "inputs": [{ "indexed": true, "internalType": "address", "name": "account", "type": "address" }],
+          "name": "Paused",
+          "type": "event"
+        },
+        {
+          "anonymous": false,
+          "inputs": [{ "indexed": false, "internalType": "address", "name": "implementation", "type": "address" }],
+          "name": "Upgraded",
+          "type": "event"
+        },
+        {
+          "inputs": [{ "internalType": "address", "name": "newImplementation", "type": "address" }],
+          "name": "upgradeTo",
+          "outputs": [],
+          "stateMutability": "nonpayable",
+          "type": "function"
+        }
+      ]
+    }
+  ],
+  "match_conditions": {
+    "functions": [
+      { "signature": "upgradeTo(address)", "expression": null },
+      { "signature": "upgradeToAndCall(address,bytes)", "expression": null }
+    ],
+    "events": [
+      { "signature": "Transfer(address,address,uint256)", "expression": null },
+      { "signature": "Mint(address,address,uint256)", "expression": null },
+      { "signature": "Pause()", "expression": null },
+      { "signature": "Paused(address)", "expression": null },
+      { "signature": "Upgraded(address)", "expression": null }
+    ],
+    "transactions": []
+  },
+  "trigger_conditions": [],
+  "triggers": ["xdc_console"]
+}
+
+
