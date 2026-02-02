@@ -1,6 +1,6 @@
 {
   "name": "XDC USDC + Bridge Key Actions (console)",
-  "networks": ["xdc_mainnet"],
+  "networks": ["xdc_mainnet_fork_local"],
   "paused": false,
   "addresses": [
     {

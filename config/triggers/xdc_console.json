@@ -6,7 +6,7 @@
       "language": "Bash",
       "script_path": "./config/triggers/scripts/xdc_key_actions_console.sh",
       "arguments": null,
-      "timeout_ms": 2000
+      "timeout_ms": 10000
     }
   }
 }

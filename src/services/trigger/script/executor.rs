@@ -176,8 +176,22 @@ pub fn process_script_output(
 	}
 
 	// If the script is from a custom notification and the status is success, we don't need to check
-	// the output
+	// the output. Still, it is useful to surface stdout/stderr for "console"-style triggers.
 	if from_custom_notification {
+		let stdout = String::from_utf8_lossy(&output.stdout);
+		let stderr = String::from_utf8_lossy(&output.stderr);
+
+		let out = stdout.trim_end();
+		if !out.trim().is_empty() {
+			// Keep as a single log entry; scripts can print multiple lines.
+			tracing::info!("Trigger script output:\n{}", out);
+		}
+
+		let err = stderr.trim_end();
+		if !err.trim().is_empty() {
+			tracing::warn!("Trigger script stderr:\n{}", err);
+		}
+
 		return Ok(true);
 	}
 

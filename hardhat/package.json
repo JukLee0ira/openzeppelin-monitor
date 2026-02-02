@@ -1,0 +1,18 @@
+{
+  "name": "openzeppelin-monitor-xdc-fork-hardhat",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Hardhat fork of XDC mainnet for local event simulation (for OpenZeppelin Monitor).",
+  "license": "UNLICENSED",
+  "scripts": {
+    "node": "hardhat node --hostname 127.0.0.1 --port 8545",
+    "compile": "hardhat compile",
+    "demo:emit": "hardhat run ./scripts/demoEmit.js --network localhost"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^6.1.0",
+    "hardhat": "^2.22.19"
+  }
+}
+
+

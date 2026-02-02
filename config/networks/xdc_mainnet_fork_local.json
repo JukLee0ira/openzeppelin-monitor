@@ -1,0 +1,23 @@
+{
+  "network_type": "EVM",
+  "slug": "xdc_mainnet_fork_local",
+  "name": "XDC Mainnet (Hardhat Fork Local)",
+  "rpc_urls": [
+    {
+      "type_": "rpc",
+      "url": {
+        "type": "plain",
+        "value": "http://127.0.0.1:8545"
+      },
+      "weight": 100
+    }
+  ],
+  "chain_id": 50,
+  "block_time_ms": 12000,
+  "confirmation_blocks": 1,
+  "cron_schedule": "*/1 * * * * *",
+  "max_past_blocks": 200,
+  "store_blocks": false
+}
+
+

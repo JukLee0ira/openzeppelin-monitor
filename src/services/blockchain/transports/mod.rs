@@ -53,11 +53,17 @@ pub trait BlockchainTransport: Send + Sync {
 		P: Into<Value> + Send + Clone + Serialize,
 	{
 		// Default implementation for JSON-RPC
+		// NOTE: Some JSON-RPC servers (including Hardhat) reject `"params": null`.
+		// Use an empty params array when no params are provided for maximum compatibility.
+		let params_value = match params {
+			Some(p) => p.into(),
+			None => Value::Array(vec![]),
+		};
 		json!({
 			"jsonrpc": "2.0",
 			"id": 1,
 			"method": method,
-			"params": params.map(|p| p.into())
+			"params": params_value
 		})
 	}
 

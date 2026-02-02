@@ -49,3 +49,16 @@ node_modules
 
 # Ignore logs dir
 logs/
+
+
+hardhat/node_modules/
+hardhat/artifacts/
+hardhat/cache/
+hardhat/coverage/
+hardhat/coverage.json
+hardhat/.env
+hardhat/npm-debug.log*
+hardhat/yarn-debug.log*
+hardhat/yarn-error.log*
+
+openzeppelin-monitor
