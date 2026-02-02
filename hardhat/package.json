@@ -7,7 +7,8 @@
   "scripts": {
     "node": "hardhat node --hostname 127.0.0.1 --port 8545",
     "compile": "hardhat compile",
-    "demo:emit": "hardhat run ./scripts/demoEmit.js --network localhost"
+    "demo:emit": "hardhat run ./scripts/demoEmit.js --network localhost",
+    "demo:emit:real": "hardhat run ./scripts/demoEmitRealUsdc.js --network localhost"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^6.1.0",
