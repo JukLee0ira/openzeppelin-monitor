@@ -23,7 +23,6 @@ const path = require("path");
  *
  * Env:
  *   TARGET_ADDRESS=0xfa2958cb79b0491cc627c1557f441ef849ca8eb1
- *   RESET_FORK=1                  # (recommended) wipe local state back to a clean fork
  *   XDC_RPC_URL=https://rpc.ankr.com/xdc
  *   PAUSER_ADDRESS=0x...
  *   MINTER_ADDRESS=0x...
@@ -63,12 +62,27 @@ async function stopImpersonate(address) {
   await hre.network.provider.send("hardhat_stopImpersonatingAccount", [address]);
 }
 
+function topicToAddress(topic) {
+  // topic is 0x + 64 hex chars, address is last 40 chars
+  if (!topic || typeof topic !== "string" || !topic.startsWith("0x") || topic.length !== 66) {
+    return null;
+  }
+  return hre.ethers.getAddress("0x" + topic.slice(26));
+}
+
+async function tryCall(contract, fn, args = []) {
+  try {
+    return await contract[fn](...args);
+  } catch (e) {
+    return null;
+  }
+}
+
 async function main() {
   const target = hre.ethers.getAddress(process.env.TARGET_ADDRESS || DEFAULT_TARGET);
 
   // If you previously used the "inject" demo (hardhat_setCode), your local fork no longer matches mainnet.
   // Resetting restores the forked state (code + storage) from the upstream RPC.
-  if (process.env.RESET_FORK === "1") {
     const upstream = process.env.XDC_RPC_URL || "https://rpc.ankr.com/xdc";
     await hre.network.provider.send("hardhat_reset", [
       {
@@ -76,13 +90,14 @@ async function main() {
       }
     ]);
     console.log(`[real] hardhat_reset done (forking from ${upstream})`);
-  }
+  
 
   // Load proxy ABI (you provided usdcabi.json)
   const proxyAbiPath = path.join(__dirname, "../../contracts/XDCS_USDC/usdcabi.json");
   const proxyAbi = JSON.parse(fs.readFileSync(proxyAbiPath, "utf8"));
 
-  // Minimal token ABI (for Transfer simulation)
+  // Minimal token ABI (for real event simulation)
+  // NOTE: Not every token/proxy will implement all of these; we probe and fall back.
   const tokenAbi = [
     {
       type: "function",
@@ -110,24 +125,174 @@ async function main() {
         { name: "amount", type: "uint256" }
       ],
       outputs: []
+    },
+    // USDC-style role getters / config (best-effort)
+    {
+      type: "function",
+      name: "pauser",
+      stateMutability: "view",
+      inputs: [],
+      outputs: [{ name: "", type: "address" }]
+    },
+    {
+      type: "function",
+      name: "masterMinter",
+      stateMutability: "view",
+      inputs: [],
+      outputs: [{ name: "", type: "address" }]
+    },
+    {
+      type: "function",
+      name: "configureMinter",
+      stateMutability: "nonpayable",
+      inputs: [
+        { name: "minter", type: "address" },
+        { name: "minterAllowedAmount", type: "uint256" }
+      ],
+      outputs: [{ name: "", type: "bool" }]
+    },
+    {
+      type: "function",
+      name: "minterAllowance",
+      stateMutability: "view",
+      inputs: [{ name: "minter", type: "address" }],
+      outputs: [{ name: "", type: "uint256" }]
     }
   ];
 
   const [signer0] = await hre.ethers.getSigners();
 
-  // 1) Real Transfer event (transfer 0 to self is typically allowed; no USDC balance needed)
+  // 1) Try to emit a real Transfer event.
+  // Some tokens may not emit Transfer on a 0-value transfer; if that happens, a successful mint below will emit Transfer(0x0 -> to) anyway.
   const token = new hre.ethers.Contract(target, tokenAbi, signer0);
-  const txT = await token.transfer(signer0.address, 0n);
-  await txT.wait();
-  console.log(`[real] Transfer emitted via real contract at ${target}, tx=${txT.hash}`);
+  try {
+    const txT = await token.transfer(signer0.address, 0n);
+    const rT = await txT.wait();
+    console.log(
+      `[real] transfer(0) sent to emit Transfer (best-effort), block=${rT.blockNumber}, tx=${txT.hash}`
+    );
+  } catch (e) {
+    console.log(`[real] transfer(0) failed or didn't emit (will rely on mint if possible): ${e.message || e}`);
+  }
 
-  // 2) Real Upgraded event (no bytecode change): read admin + implementation from EIP-1967 slots
+  // 2) Try to emit Mint (+ likely Transfer) using the REAL contract.
+  // Priority:
+  //   - MINTER_ADDRESS env (impersonate that address and call mint)
+  //   - configure signer0 as minter via masterMinter (if supported) then mint from signer0
+  //   - discover a minter from recent Mint logs and impersonate it
+  const mintTopic0 = hre.ethers.id("Mint(address,address,uint256)");
+  const minterEnv = process.env.MINTER_ADDRESS ? hre.ethers.getAddress(process.env.MINTER_ADDRESS) : null;
+
+  const tryMintAs = async (minterAddr) => {
+    const minterSigner = await impersonate(minterAddr);
+    const tokenAsMinter = new hre.ethers.Contract(target, tokenAbi, minterSigner);
+    try {
+      const txM = await tokenAsMinter.mint(signer0.address, 1n);
+      await txM.wait();
+      console.log(`[real] mint() sent from minter=${minterAddr}, tx=${txM.hash}`);
+      return true;
+    } catch (e) {
+      console.log(`[real] mint() failed from minter=${minterAddr}: ${e.message || e}`);
+      return false;
+    } finally {
+      await stopImpersonate(minterAddr);
+    }
+  };
+
+  let minted = false;
+  if (minterEnv) {
+    minted = await tryMintAs(minterEnv);
+  }
+
+  if (!minted) {
+    // Try configureMinter via masterMinter (USDC-style)
+    const mm = await tryCall(token, "masterMinter");
+    const masterMinter = mm ? hre.ethers.getAddress(mm) : null;
+    if (masterMinter) {
+      const masterSigner = await impersonate(masterMinter);
+      const tokenAsMaster = new hre.ethers.Contract(target, tokenAbi, masterSigner);
+      try {
+        const txC = await tokenAsMaster.configureMinter(signer0.address, 1000000n);
+        const rC = await txC.wait();
+        console.log(
+          `[real] configureMinter(signer0, 1000000) sent from masterMinter=${masterMinter}, block=${rC.blockNumber}, tx=${txC.hash}`
+        );
+      } catch (e) {
+        console.log(`[real] configureMinter failed (maybe not USDC-style / wrong role): ${e.message || e}`);
+      } finally {
+        await stopImpersonate(masterMinter);
+      }
+
+      try {
+        const txM2 = await token.mint(signer0.address, 1n);
+        const rM2 = await txM2.wait();
+        console.log(
+          `[real] mint() sent from signer0 (after configureMinter attempt), block=${rM2.blockNumber}, tx=${txM2.hash}`
+        );
+        minted = true;
+      } catch (e) {
+        console.log(`[real] mint() from signer0 failed (still not a minter): ${e.message || e}`);
+      }
+    }
+  }
+
+  if (!minted) {
+    // Try discovering a minter address from recent Mint logs
+    const latest = await hre.ethers.provider.getBlockNumber();
+    const searchBlocks = BigInt(process.env.MINT_SEARCH_BLOCKS || "5000");
+    const from = latest > Number(searchBlocks) ? latest - Number(searchBlocks) : 0;
+    try {
+      const logs = await hre.ethers.provider.getLogs({
+        address: target,
+        fromBlock: from,
+        toBlock: latest,
+        topics: [mintTopic0]
+      });
+      const first = logs[0];
+      const discovered = first?.topics?.[1] ? topicToAddress(first.topics[1]) : null;
+      if (discovered) {
+        console.log(`[real] discovered recent minter from Mint logs: ${discovered} (search ${from}..${latest})`);
+        minted = await tryMintAs(discovered);
+      } else {
+        console.log(`[real] no Mint logs found in last ${searchBlocks.toString()} blocks; cannot auto-discover a minter`);
+      }
+    } catch (e) {
+      console.log(`[real] Mint log search failed: ${e.message || e}`);
+    }
+  }
+
+  // 3) Try to emit Pause/Paused using a REAL pauser (env > onchain getter)
+  const pauserEnv = process.env.PAUSER_ADDRESS ? hre.ethers.getAddress(process.env.PAUSER_ADDRESS) : null;
+  let pauserAddr = pauserEnv;
+  if (!pauserAddr) {
+    const p = await tryCall(token, "pauser");
+    pauserAddr = p ? hre.ethers.getAddress(p) : null;
+  }
+  if (pauserAddr) {
+    const pauserSigner = await impersonate(pauserAddr);
+    const tokenAsPauser = new hre.ethers.Contract(target, tokenAbi, pauserSigner);
+    try {
+      const txP = await tokenAsPauser.pause();
+      const rP = await txP.wait();
+      console.log(`[real] pause() sent from pauser=${pauserAddr}, block=${rP.blockNumber}, tx=${txP.hash}`);
+    } catch (e) {
+      console.log(`[real] pause() failed from pauser=${pauserAddr}: ${e.message || e}`);
+    } finally {
+      await stopImpersonate(pauserAddr);
+    }
+  } else {
+    console.log(`[real] Skip pause(): no PAUSER_ADDRESS provided and pauser() getter not available`);
+  }
+
+  // 4) Try to emit Upgraded (best-effort): this depends on the target being upgradeable + correct admin/ABI.
   const adminWord = await hre.ethers.provider.getStorage(target, EIP1967_ADMIN_SLOT);
   const implWord = await hre.ethers.provider.getStorage(target, EIP1967_IMPL_SLOT);
   const admin = storageWordToAddress(adminWord);
   const impl = storageWordToAddress(implWord);
 
-  if (admin && impl) {
+  // IMPORTANT: if admin/impl decode to the zero address, DO NOT attempt impersonation,
+  // otherwise you'll create confusing "from=0x0" transactions that may match your monitor.
+  if (admin && impl && admin !== hre.ethers.ZeroAddress && impl !== hre.ethers.ZeroAddress) {
     console.log(`[real] EIP-1967 slots decoded: admin=${admin}, impl=${impl}`);
 
     try {
@@ -147,38 +312,6 @@ async function main() {
     }
   } else {
     console.log(`[real] Skip Upgraded: EIP-1967 admin/impl slots look empty on this target`);
-  }
-
-  // 3) Optional: pause/mint with user-provided role addresses
-  const pauser = process.env.PAUSER_ADDRESS ? hre.ethers.getAddress(process.env.PAUSER_ADDRESS) : null;
-  const minter = process.env.MINTER_ADDRESS ? hre.ethers.getAddress(process.env.MINTER_ADDRESS) : null;
-
-  if (pauser) {
-    const pauserSigner = await impersonate(pauser);
-    const tokenAsPauser = new hre.ethers.Contract(target, tokenAbi, pauserSigner);
-    try {
-      const txP = await tokenAsPauser.pause();
-      await txP.wait();
-      console.log(`[real] pause() sent from ${pauser}, tx=${txP.hash}`);
-    } catch (e) {
-      console.log(`[real] pause() failed (need correct role / function may not exist): ${e.message || e}`);
-    } finally {
-      await stopImpersonate(pauser);
-    }
-  }
-
-  if (minter) {
-    const minterSigner = await impersonate(minter);
-    const tokenAsMinter = new hre.ethers.Contract(target, tokenAbi, minterSigner);
-    try {
-      const txM = await tokenAsMinter.mint(signer0.address, 1n);
-      await txM.wait();
-      console.log(`[real] mint() sent from ${minter}, tx=${txM.hash}`);
-    } catch (e) {
-      console.log(`[real] mint() failed (need correct role / function may not exist): ${e.message || e}`);
-    } finally {
-      await stopImpersonate(minter);
-    }
   }
 
   console.log(`[real] Done on network=${hre.network.name}, target=${target}`);
