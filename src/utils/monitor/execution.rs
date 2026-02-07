@@ -13,6 +13,7 @@ use crate::{
 		filter::{handle_match, FilterService},
 		trigger::TriggerExecutionService,
 	},
+	utils::influxdb::{InfluxClient, InfluxConfig},
 	utils::monitor::MonitorExecutionError,
 };
 use std::{collections::HashMap, path::Path, sync::Arc};
@@ -182,7 +183,7 @@ pub async fn execute_monitor<
 				})?;
 
 				tracing::debug!(block = %block_number, "Filtering block");
-				config
+				let matches = config
 					.filter_service
 					.filter_block(
 						&*client,
@@ -198,7 +199,26 @@ pub async fn execute_monitor<
 							None,
 							None,
 						)
-					})?
+					})?;
+
+				// Best-effort persistence to InfluxDB for "monitor execution" mode as well.
+				// This lets you use `--monitor-path ...` and still store results into InfluxDB.
+				if let Some(cfg) = InfluxConfig::from_env() {
+					let influx = InfluxClient::new(cfg);
+					let _ = influx
+						.persist_block_and_matches(&network, block, &matches)
+						.await
+						.map_err(|e| {
+							tracing::warn!(
+								network = %network.slug,
+								error = %e,
+								"InfluxDB persist failed (monitor execution mode)"
+							);
+							e
+						});
+				}
+
+				matches
 			}
 			BlockChainType::Stellar => {
 				let client = config
@@ -237,7 +257,7 @@ pub async fn execute_monitor<
 					)
 				})?;
 
-				config
+				let matches = config
 					.filter_service
 					.filter_block(
 						&*client,
@@ -253,7 +273,25 @@ pub async fn execute_monitor<
 							None,
 							None,
 						)
-					})?
+					})?;
+
+				// Best-effort persistence to InfluxDB for "monitor execution" mode as well.
+				if let Some(cfg) = InfluxConfig::from_env() {
+					let influx = InfluxClient::new(cfg);
+					let _ = influx
+						.persist_block_and_matches(&network, block, &matches)
+						.await
+						.map_err(|e| {
+							tracing::warn!(
+								network = %network.slug,
+								error = %e,
+								"InfluxDB persist failed (monitor execution mode)"
+							);
+							e
+						});
+				}
+
+				matches
 			}
 			BlockChainType::Midnight => {
 				return Err(MonitorExecutionError::execution_error(

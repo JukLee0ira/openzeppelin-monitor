@@ -45,6 +45,32 @@ In the rapidly evolving world of blockchain technology, effective monitoring is 
 
 View the [Usage](https://docs.openzeppelin.com/monitor#running_the_monitor) documentation for more information.
 
+### InfluxDB persistence (blocks/events)
+
+This fork adds optional persistence to **InfluxDB v2** (bucket: `usdc_testdata_bucket`) for fast querying/analytics.
+
+- **Bucket**: `usdc_testdata_bucket`
+- **Measurements**:
+  - `blocks`: one point per processed block (timestamp, block number, tx count, match count, network metadata)
+  - `events`: one point per matched event/function signature (tx hash, from/to, contract, amount, network)
+  - `whales_snapshot`: reserved for Week 4 (no business data written yet)
+
+Configure via environment variables (see `config/influxdb.env.example`):
+
+- `INFLUXDB_ENABLED=true`
+- `INFLUXDB_URL=http://149.102.157.42:8086`
+- `INFLUXDB_TOKEN=...`
+- `INFLUXDB_BUCKET=usdc_testdata_bucket`
+- `INFLUXDB_ORG=...` (optional; auto-detected if omitted)
+
+Initialization:
+
+- Run `openzeppelin-monitor --influxdb-init` to ensure the bucket exists (requires token permissions).
+
+中文说明（简版）：
+
+- 设置 `INFLUXDB_ENABLED=true` 后，监控到的区块/事件会写入 InfluxDB 的 `usdc_testdata_bucket`，分别落在 `blocks` 和 `events` 两个 measurement；`whales_snapshot` 仅预留不写数据。
+
 ## For Developers
 
 ### Technical Overview

@@ -41,6 +41,7 @@ use crate::{
 	},
 	utils::{
 		constants::DOCUMENTATION_URL,
+		influxdb::{InfluxClient, InfluxConfig},
 		logging::setup_logging,
 		metrics::server::create_metrics_server,
 		monitor::{
@@ -136,6 +137,10 @@ struct Cli {
 	/// Validate configuration files without starting the service
 	#[arg(long)]
 	check: bool,
+
+	/// Initialize InfluxDB bucket (and verify credentials) then exit
+	#[arg(long)]
+	influxdb_init: bool,
 }
 
 impl Cli {
@@ -176,6 +181,12 @@ impl Cli {
 			set_var("METRICS_ENABLED", "true");
 		}
 
+		// InfluxDB init - ensure influx is enabled when init is requested
+		if self.influxdb_init {
+			set_var("INFLUXDB_ENABLED", "true");
+			set_var("INFLUXDB_INIT", "true");
+		}
+
 		// Metrics address - override if CLI flag is set
 		if let Some(address) = &self.metrics_address {
 			// Extract port from address if it's in HOST:PORT format
@@ -201,6 +212,23 @@ async fn main() -> Result<()> {
 	setup_logging().unwrap_or_else(|e| {
 		error!("Failed to setup logging: {}", e);
 	});
+
+	// Optional InfluxDB persistence (events/blocks/whales_snapshot schema)
+	let influx = InfluxConfig::from_env().map(|cfg| Arc::new(InfluxClient::new(cfg)));
+
+	// If --influxdb-init is provided, initialize bucket then exit
+	if cli.influxdb_init {
+		let influx = influx.ok_or_else(|| {
+			anyhow::anyhow!(
+				"InfluxDB is not configured. Set INFLUXDB_TOKEN (and optionally INFLUXDB_URL/INFLUXDB_ORG/INFLUXDB_BUCKET)"
+			)
+		})?;
+		influx.ensure_ready().await.map_err(|e| {
+			anyhow::anyhow!("InfluxDB init failed: {}", e)
+		})?;
+		info!("InfluxDB init ok (bucket ensured)");
+		return Ok(());
+	}
 
 	// If --check flag is provided, only validate configuration and exit
 	if cli.check {
@@ -236,6 +264,18 @@ async fn main() -> Result<()> {
 	let block_number = cli.block;
 
 	let client_pool = Arc::new(ClientPool::new());
+	if let Some(influx) = &influx {
+		let should_init = var("INFLUXDB_INIT")
+			.map(|v| v == "true" || v == "1")
+			.unwrap_or(false);
+		if should_init {
+			if let Err(e) = influx.ensure_ready().await {
+				error!("InfluxDB init failed (non-fatal): {}", e);
+			} else {
+				info!("InfluxDB init ok (bucket ensured)");
+			}
+		}
+	}
 
 	let should_test_monitor_execution = monitor_path.is_some();
 	// If monitor path is provided, test monitor execution else start the service
@@ -333,6 +373,7 @@ async fn main() -> Result<()> {
 		active_monitors,
 		client_pool.clone(),
 		contract_specs,
+		influx.clone(),
 	);
 	let trigger_handler = create_trigger_handler(
 		shutdown_tx.clone(),

@@ -12,10 +12,10 @@
 //! # Handlers
 //! - `create_block_handler`: Creates a block handler function that processes new blocks from the
 //!   blockchain
-//! - `create_trigger_handler`: Creates a trigger handler function that processes trigger events
-//!   from the block processing pipeline
+//! - `create_triggeocessing pipeline
 
-use futures::future::BoxFuture;
+use futures::future::BoxFuture;r_handler`: Creates a trigger handler function that processes trigger events
+//!   from the block pr
 use std::{collections::HashMap, error::Error, sync::Arc};
 use tokio::sync::{watch, Mutex};
 
@@ -38,6 +38,7 @@ use crate::{
 		},
 	},
 	utils::normalize_string,
+	utils::influxdb::InfluxClient,
 };
 
 /// Type alias for handling ServiceResult
@@ -144,6 +145,7 @@ pub fn create_block_handler<P: ClientPoolTrait + 'static>(
 	active_monitors: Vec<Monitor>,
 	client_pools: Arc<P>,
 	contract_specs: Vec<(String, ContractSpec)>,
+	influx: Option<Arc<InfluxClient>>,
 ) -> Arc<impl Fn(BlockType, Network) -> BoxFuture<'static, ProcessedBlock> + Send + Sync> {
 	Arc::new(
 		move |block: BlockType, network: Network| -> BoxFuture<'static, ProcessedBlock> {
@@ -152,6 +154,7 @@ pub fn create_block_handler<P: ClientPoolTrait + 'static>(
 			let client_pools = client_pools.clone();
 			let shutdown_tx = shutdown_tx.clone();
 			let contract_specs = contract_specs.clone();
+			let influx = influx.clone();
 			Box::pin(async move {
 				let applicable_monitors = filter_network_monitors(&active_monitors, &network.slug);
 
@@ -202,6 +205,20 @@ pub fn create_block_handler<P: ClientPoolTrait + 'static>(
 					};
 
 					processed_block.processing_results = matches.unwrap_or_default();
+				}
+
+				// Best-effort persistence to InfluxDB (non-fatal on errors)
+				if let Some(influx) = &influx {
+					if let Err(e) = influx
+						.persist_block_and_matches(&network, &block, &processed_block.processing_results)
+						.await
+					{
+						tracing::warn!(
+							network = %network.slug,
+							error = %e,
+							"Failed to persist block/matches to InfluxDB"
+						);
+					}
 				}
 
 				processed_block

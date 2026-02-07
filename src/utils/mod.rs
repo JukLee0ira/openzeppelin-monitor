@@ -26,6 +26,7 @@ pub mod metrics;
 pub mod monitor;
 pub mod parsing;
 pub mod tests;
+pub mod influxdb;
 
 pub use client_storage::ClientStorage;
 pub use constants::*;

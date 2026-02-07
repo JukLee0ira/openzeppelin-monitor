@@ -89,7 +89,7 @@ async function main() {
         forking: { jsonRpcUrl: upstream }
       }
     ]);
-    console.log(`[real] hardhat_reset done (forking from ${upstream})`);
+    console.log(`hardhat_reset done (forking from ${upstream})`);
   
 
   // Load proxy ABI (you provided usdcabi.json)
@@ -169,10 +169,10 @@ async function main() {
     const txT = await token.transfer(signer0.address, 0n);
     const rT = await txT.wait();
     console.log(
-      `[real] transfer(0) sent to emit Transfer (best-effort), block=${rT.blockNumber}, tx=${txT.hash}`
+      `transfer(0) sent to emit Transfer (best-effort), block=${rT.blockNumber}, tx=${txT.hash}`
     );
   } catch (e) {
-    console.log(`[real] transfer(0) failed or didn't emit (will rely on mint if possible): ${e.message || e}`);
+    console.log(`transfer(0) failed or didn't emit (will rely on mint if possible): ${e.message || e}`);
   }
 
   // 2) Try to emit Mint (+ likely Transfer) using the REAL contract.
@@ -189,10 +189,10 @@ async function main() {
     try {
       const txM = await tokenAsMinter.mint(signer0.address, 1n);
       await txM.wait();
-      console.log(`[real] mint() sent from minter=${minterAddr}, tx=${txM.hash}`);
+      console.log(`mint() sent from minter=${minterAddr}, tx=${txM.hash}`);
       return true;
     } catch (e) {
-      console.log(`[real] mint() failed from minter=${minterAddr}: ${e.message || e}`);
+      console.log(`mint() failed from minter=${minterAddr}: ${e.message || e}`);
       return false;
     } finally {
       await stopImpersonate(minterAddr);
@@ -215,10 +215,10 @@ async function main() {
         const txC = await tokenAsMaster.configureMinter(signer0.address, 1000000n);
         const rC = await txC.wait();
         console.log(
-          `[real] configureMinter(signer0, 1000000) sent from masterMinter=${masterMinter}, block=${rC.blockNumber}, tx=${txC.hash}`
+          `configureMinter(signer0, 1000000) sent from masterMinter=${masterMinter}, block=${rC.blockNumber}, tx=${txC.hash}`
         );
       } catch (e) {
-        console.log(`[real] configureMinter failed (maybe not USDC-style / wrong role): ${e.message || e}`);
+        console.log(`configureMinter failed (maybe not USDC-style / wrong role): ${e.message || e}`);
       } finally {
         await stopImpersonate(masterMinter);
       }
@@ -227,11 +227,11 @@ async function main() {
         const txM2 = await token.mint(signer0.address, 1n);
         const rM2 = await txM2.wait();
         console.log(
-          `[real] mint() sent from signer0 (after configureMinter attempt), block=${rM2.blockNumber}, tx=${txM2.hash}`
+          `mint() sent from signer0 (after configureMinter attempt), block=${rM2.blockNumber}, tx=${txM2.hash}`
         );
         minted = true;
       } catch (e) {
-        console.log(`[real] mint() from signer0 failed (still not a minter): ${e.message || e}`);
+        console.log(`mint() from signer0 failed (still not a minter): ${e.message || e}`);
       }
     }
   }
@@ -251,13 +251,13 @@ async function main() {
       const first = logs[0];
       const discovered = first?.topics?.[1] ? topicToAddress(first.topics[1]) : null;
       if (discovered) {
-        console.log(`[real] discovered recent minter from Mint logs: ${discovered} (search ${from}..${latest})`);
+        console.log(`discovered recent minter from Mint logs: ${discovered} (search ${from}..${latest})`);
         minted = await tryMintAs(discovered);
       } else {
-        console.log(`[real] no Mint logs found in last ${searchBlocks.toString()} blocks; cannot auto-discover a minter`);
+        console.log(`no Mint logs found in last ${searchBlocks.toString()} blocks; cannot auto-discover a minter`);
       }
     } catch (e) {
-      console.log(`[real] Mint log search failed: ${e.message || e}`);
+      console.log(`Mint log search failed: ${e.message || e}`);
     }
   }
 
@@ -274,14 +274,14 @@ async function main() {
     try {
       const txP = await tokenAsPauser.pause();
       const rP = await txP.wait();
-      console.log(`[real] pause() sent from pauser=${pauserAddr}, block=${rP.blockNumber}, tx=${txP.hash}`);
+      console.log(`pause() sent from pauser=${pauserAddr}, block=${rP.blockNumber}, tx=${txP.hash}`);
     } catch (e) {
-      console.log(`[real] pause() failed from pauser=${pauserAddr}: ${e.message || e}`);
+      console.log(`pause() failed from pauser=${pauserAddr}: ${e.message || e}`);
     } finally {
       await stopImpersonate(pauserAddr);
     }
   } else {
-    console.log(`[real] Skip pause(): no PAUSER_ADDRESS provided and pauser() getter not available`);
+    console.log(`Skip pause(): no PAUSER_ADDRESS provided and pauser() getter not available`);
   }
 
   // 4) Try to emit Upgraded (best-effort): this depends on the target being upgradeable + correct admin/ABI.
@@ -293,7 +293,7 @@ async function main() {
   // IMPORTANT: if admin/impl decode to the zero address, DO NOT attempt impersonation,
   // otherwise you'll create confusing "from=0x0" transactions that may match your monitor.
   if (admin && impl && admin !== hre.ethers.ZeroAddress && impl !== hre.ethers.ZeroAddress) {
-    console.log(`[real] EIP-1967 slots decoded: admin=${admin}, impl=${impl}`);
+    console.log(`EIP-1967 slots decoded: admin=${admin}, impl=${impl}`);
 
     try {
       const adminSigner = await impersonate(admin);
@@ -303,18 +303,18 @@ async function main() {
       // Some deployments are not OZ Transparent proxies / not EIP-1967, or upgradeTo is access-controlled differently.
       const txU = await proxy.upgradeTo(impl);
       await txU.wait();
-      console.log(`[real] Upgraded emitted (best-effort), tx=${txU.hash}`);
+      console.log(`Upgraded emitted (best-effort), tx=${txU.hash}`);
       await stopImpersonate(admin);
     } catch (e) {
       console.log(
-        `[real] upgradeTo(...) attempt failed (this may mean the target isn't an EIP-1967 OZ proxy, or admin/ABI is different): ${e.message || e}`
+        `upgradeTo(...) attempt failed (this may mean the target isn't an EIP-1967 OZ proxy, or admin/ABI is different): ${e.message || e}`
       );
     }
   } else {
-    console.log(`[real] Skip Upgraded: EIP-1967 admin/impl slots look empty on this target`);
+    console.log(`Skip Upgraded: EIP-1967 admin/impl slots look empty on this target`);
   }
 
-  console.log(`[real] Done on network=${hre.network.name}, target=${target}`);
+  console.log(`Done on network=${hre.network.name}, target=${target}`);
 }
 
 main().catch((err) => {
