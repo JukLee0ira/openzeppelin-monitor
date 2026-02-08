@@ -11,6 +11,7 @@
     "demo:emit:real": "hardhat run ./scripts/demoEmitRealUsdc.js --network localhost",
     "demo:emit:real:continuous": "hardhat run ./scripts/demoEmitRealUsdc.js --network localhost continuous",
     "demo:emit:mint": "hardhat run ./scripts/demoMint.js --network localhost",
+    "demo:emit:burn": "hardhat run ./scripts/demoBurn.js --network localhost",
     "demo:emit:transfer": "hardhat run ./scripts/demoTransfer.js --network localhost"
   },
   "devDependencies": {

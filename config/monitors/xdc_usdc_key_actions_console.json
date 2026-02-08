@@ -26,6 +26,15 @@
           "name": "Mint",
           "type": "event"
         },
+        {
+          "anonymous": false,
+          "inputs": [
+            { "indexed": true, "internalType": "address", "name": "burner", "type": "address" },
+            { "indexed": false, "internalType": "uint256", "name": "amount", "type": "uint256" }
+          ],
+          "name": "Burn",
+          "type": "event"
+        },
         { "anonymous": false, "inputs": [], "name": "Pause", "type": "event" },
         {
           "anonymous": false,
@@ -36,6 +45,15 @@
         {
           "inputs": [{ "internalType": "address", "name": "newImplementation", "type": "address" }],
           "name": "upgradeTo",
+          "outputs": [],
+          "stateMutability": "nonpayable",
+          "type": "function"
+        },
+        {
+          "inputs": [
+            { "internalType": "uint256", "name": "_amount", "type": "uint256" }
+          ],
+          "name": "burn",
           "outputs": [],
           "stateMutability": "nonpayable",
           "type": "function"
@@ -90,11 +108,13 @@
   "match_conditions": {
     "functions": [
       { "signature": "upgradeTo(address)", "expression": null },
-      { "signature": "upgradeToAndCall(address,bytes)", "expression": null }
+      { "signature": "upgradeToAndCall(address,bytes)", "expression": null },
+      { "signature": "burn(uint256)", "expression": null }
     ],
     "events": [
       { "signature": "Transfer(address,address,uint256)", "expression": null },
       { "signature": "Mint(address,address,uint256)", "expression": null },
+      { "signature": "Burn(address,uint256)", "expression": null },
       { "signature": "Pause()", "expression": null },
       { "signature": "Paused(address)", "expression": null },
       { "signature": "Upgraded(address)", "expression": null }
