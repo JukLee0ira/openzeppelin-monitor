@@ -147,7 +147,7 @@ async function injectMint(token, target, tokenAbi, signer0) {
     const minterSigner = await impersonate(minterAddr);
     const tokenAsMinter = new hre.ethers.Contract(target, tokenAbi, minterSigner);
     try {
-      const txM = await tokenAsMinter["mint"](signer0.address, 1n);
+      const txM = await tokenAsMinter["mint"](signer0.address, 100n);
       const rM = await txM.wait();
       console.log(`  ✓ Mint from minter=${minterAddr}, block=${rM.blockNumber}, tx=${rM.hash}`);
       return true;
@@ -185,7 +185,7 @@ async function injectMint(token, target, tokenAbi, signer0) {
     }
 
     try {
-      const txM2 = await token["mint"](signer0.address, 1n);
+      const txM2 = await token["mint"](signer0.address, 100n);
       const rM2 = await txM2.wait();
       console.log(`  ✓ Mint from signer0, block=${rM2.blockNumber}, tx=${rM2.hash}`);
       return true;

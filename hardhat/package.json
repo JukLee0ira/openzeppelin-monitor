@@ -9,7 +9,8 @@
     "compile": "hardhat compile",
     "demo:emit": "hardhat run ./scripts/demoEmitRealUsdc.js --network localhost",
     "demo:emit:real": "hardhat run ./scripts/demoEmitRealUsdc.js --network localhost",
-    "demo:emit:real:continuous": "hardhat run ./scripts/demoEmitRealUsdc.js --network localhost continuous"
+    "demo:emit:real:continuous": "hardhat run ./scripts/demoEmitRealUsdc.js --network localhost continuous",
+    "demo:emit:mint": "hardhat run ./scripts/demoMint.js --network localhost"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^6.1.0",
