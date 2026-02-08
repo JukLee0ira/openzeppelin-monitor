@@ -3,52 +3,94 @@ const fs = require("fs");
 const path = require("path");
 
 /**
- * Real-mode demo:
- * - DOES NOT change bytecode at TARGET_ADDRESS (no hardhat_setCode)
- * - Calls the real (forked) contract at TARGET_ADDRESS to trigger events
- *
- * What we can do without any privileged keys:
- * - Emit a real ERC20 Transfer event by calling transfer(..., 0)
- *
- * What we can do with fork-only superpowers (still keeps contract bytecode identical):
- * - Impersonate the proxy admin (read from EIP-1967 admin slot) and call upgradeTo(currentImplementation)
- *   to emit Upgraded(address) WITHOUT changing implementation (it stays the same).
- *
- * Optional (requires you to provide role addresses, and requires those functions to exist):
- * - PAUSER_ADDRESS=0x... to try calling pause()
- * - MINTER_ADDRESS=0x... to try calling mint(to, amount)
+ * Real-mode demo for continuous event injection testing.
  *
  * Usage:
- *   npm run demo:emit:real
+ *   npm run demo:emit:real                    # Single run, reset fork first
+ *   npm run demo:emit:real:continuous         # Continuous mode: inject events periodically
+ *   NO_RESET=true npm run demo:emit:real      # Don't reset fork, use existing state
  *
- * Env:
- *   TARGET_ADDRESS=0xfa2958cb79b0491cc627c1557f441ef849ca8eb1
- *   XDC_RPC_URL=https://rpc.ankr.com/xdc
- *   PAUSER_ADDRESS=0x...
- *   MINTER_ADDRESS=0x...
+ * Continuous mode options:
+ *   INTERVAL=30        # Seconds between injections (default: 60)
+ *   COUNT=10           # Number of injections (default: infinite)
+ *   INJECT_MINT=true   # Inject Mint events
+ *   INJECT_PAUSE=true  # Inject Pause events
+ *   INJECT_TRANSFER=true  # Inject Transfer events
+ *   INJECT_UPGRADED=true  # Inject Upgraded events
  */
 
 const DEFAULT_TARGET = "0xfa2958cb79b0491cc627c1557f441ef849ca8eb1";
+const DEFAULT_INTERVAL = 60;
 
-// EIP-1967 slots:
-// bytes32(uint256(keccak256('eip1967.proxy.admin')) - 1)
+// EIP-1967 slots
 const EIP1967_ADMIN_SLOT =
   "0xb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103";
-// bytes32(uint256(keccak256('eip1967.proxy.implementation')) - 1)
 const EIP1967_IMPL_SLOT =
   "0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc";
 
+// ABI definitions
+const MINIMAL_TOKEN_ABI = [
+  {
+    type: "function",
+    name: "transfer",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "to", type: "address" },
+      { name: "value", type: "uint256" }
+    ],
+    outputs: [{ name: "", type: "bool" }]
+  },
+  {
+    type: "function",
+    name: "pause",
+    stateMutability: "nonpayable",
+    inputs: [],
+    outputs: []
+  },
+  {
+    type: "function",
+    name: "mint",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "to", type: "address" },
+      { name: "amount", type: "uint256" }
+    ],
+    outputs: []
+  },
+  {
+    type: "function",
+    name: "pauser",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "address" }]
+  },
+  {
+    type: "function",
+    name: "masterMinter",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "address" }]
+  },
+  {
+    type: "function",
+    name: "configureMinter",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "minter", type: "address" },
+      { name: "minterAllowedAmount", type: "uint256" }
+    ],
+    outputs: [{ name: "", type: "bool" }]
+  }
+];
+
 function storageWordToAddress(word) {
-  // word is 0x + 64 hex chars. Address is last 40 hex chars.
   if (!word || typeof word !== "string" || !word.startsWith("0x") || word.length !== 66) {
     return null;
   }
-  const addrHex = "0x" + word.slice(26); // 2 + (64-40) = 26
-  return hre.ethers.getAddress(addrHex);
+  return hre.ethers.getAddress("0x" + word.slice(26));
 }
 
 async function setBalance(address) {
-  // Give 1e20 wei so the impersonated account can pay gas on fork
   await hre.network.provider.send("hardhat_setBalance", [address, "0x56BC75E2D63100000"]);
 }
 
@@ -62,14 +104,6 @@ async function stopImpersonate(address) {
   await hre.network.provider.send("hardhat_stopImpersonatingAccount", [address]);
 }
 
-function topicToAddress(topic) {
-  // topic is 0x + 64 hex chars, address is last 40 chars
-  if (!topic || typeof topic !== "string" || !topic.startsWith("0x") || topic.length !== 66) {
-    return null;
-  }
-  return hre.ethers.getAddress("0x" + topic.slice(26));
-}
-
 async function tryCall(contract, fn, args = []) {
   try {
     return await contract[fn](...args);
@@ -78,121 +112,47 @@ async function tryCall(contract, fn, args = []) {
   }
 }
 
-async function main() {
-  const target = hre.ethers.getAddress(process.env.TARGET_ADDRESS || DEFAULT_TARGET);
+function topicToAddress(topic) {
+  if (!topic || typeof topic !== "string" || !topic.startsWith("0x") || topic.length !== 66) {
+    return null;
+  }
+  return hre.ethers.getAddress("0x" + topic.slice(26));
+}
 
-  // If you previously used the "inject" demo (hardhat_setCode), your local fork no longer matches mainnet.
-  // Resetting restores the forked state (code + storage) from the upstream RPC.
-    const upstream = process.env.XDC_RPC_URL || "https://rpc.ankr.com/xdc";
-    await hre.network.provider.send("hardhat_reset", [
-      {
-        forking: { jsonRpcUrl: upstream }
-      }
-    ]);
-    console.log(`hardhat_reset done (forking from ${upstream})`);
-  
+// ============================================================================
+// Event Injection Functions
+// ============================================================================
 
-  // Load proxy ABI (you provided usdcabi.json)
-  const proxyAbiPath = path.join(__dirname, "../../contracts/XDCS_USDC/usdcabi.json");
-  const proxyAbi = JSON.parse(fs.readFileSync(proxyAbiPath, "utf8"));
-
-  // Minimal token ABI (for real event simulation)
-  // NOTE: Not every token/proxy will implement all of these; we probe and fall back.
-  const tokenAbi = [
-    {
-      type: "function",
-      name: "transfer",
-      stateMutability: "nonpayable",
-      inputs: [
-        { name: "to", type: "address" },
-        { name: "value", type: "uint256" }
-      ],
-      outputs: [{ name: "", type: "bool" }]
-    },
-    {
-      type: "function",
-      name: "pause",
-      stateMutability: "nonpayable",
-      inputs: [],
-      outputs: []
-    },
-    {
-      type: "function",
-      name: "mint",
-      stateMutability: "nonpayable",
-      inputs: [
-        { name: "to", type: "address" },
-        { name: "amount", type: "uint256" }
-      ],
-      outputs: []
-    },
-    // USDC-style role getters / config (best-effort)
-    {
-      type: "function",
-      name: "pauser",
-      stateMutability: "view",
-      inputs: [],
-      outputs: [{ name: "", type: "address" }]
-    },
-    {
-      type: "function",
-      name: "masterMinter",
-      stateMutability: "view",
-      inputs: [],
-      outputs: [{ name: "", type: "address" }]
-    },
-    {
-      type: "function",
-      name: "configureMinter",
-      stateMutability: "nonpayable",
-      inputs: [
-        { name: "minter", type: "address" },
-        { name: "minterAllowedAmount", type: "uint256" }
-      ],
-      outputs: [{ name: "", type: "bool" }]
-    },
-    {
-      type: "function",
-      name: "minterAllowance",
-      stateMutability: "view",
-      inputs: [{ name: "minter", type: "address" }],
-      outputs: [{ name: "", type: "uint256" }]
-    }
-  ];
-
-  const [signer0] = await hre.ethers.getSigners();
-
-  // 1) Try to emit a real Transfer event.
-  // Some tokens may not emit Transfer on a 0-value transfer; if that happens, a successful mint below will emit Transfer(0x0 -> to) anyway.
-  const token = new hre.ethers.Contract(target, tokenAbi, signer0);
+async function injectTransfer(token, target, signer0) {
+  console.log(`\n[${new Date().toISOString()}] Injecting Transfer event...`);
   try {
     const txT = await token.transfer(signer0.address, 0n);
     const rT = await txT.wait();
-    console.log(
-      `transfer(0) sent to emit Transfer (best-effort), block=${rT.blockNumber}, tx=${txT.hash}`
-    );
+    console.log(`  ✓ Transfer(0) sent, block=${rT.blockNumber}, tx=${rT.hash}`);
+    return true;
   } catch (e) {
-    console.log(`transfer(0) failed or didn't emit (will rely on mint if possible): ${e.message || e}`);
+    console.log(`  ✗ Transfer failed: ${e.message || e}`);
+    return false;
   }
+}
 
-  // 2) Try to emit Mint (+ likely Transfer) using the REAL contract.
-  // Priority:
-  //   - MINTER_ADDRESS env (impersonate that address and call mint)
-  //   - configure signer0 as minter via masterMinter (if supported) then mint from signer0
-  //   - discover a minter from recent Mint logs and impersonate it
+async function injectMint(token, target, tokenAbi, signer0) {
+  console.log(`\n[${new Date().toISOString()}] Injecting Mint event...`);
+
   const mintTopic0 = hre.ethers.id("Mint(address,address,uint256)");
   const minterEnv = process.env.MINTER_ADDRESS ? hre.ethers.getAddress(process.env.MINTER_ADDRESS) : null;
 
+  // Try to mint as a specific address
   const tryMintAs = async (minterAddr) => {
     const minterSigner = await impersonate(minterAddr);
     const tokenAsMinter = new hre.ethers.Contract(target, tokenAbi, minterSigner);
     try {
-      const txM = await tokenAsMinter.mint(signer0.address, 1n);
-      await txM.wait();
-      console.log(`mint() sent from minter=${minterAddr}, tx=${txM.hash}`);
+      const txM = await tokenAsMinter["mint"](signer0.address, 1n);
+      const rM = await txM.wait();
+      console.log(`  ✓ Mint from minter=${minterAddr}, block=${rM.blockNumber}, tx=${rM.hash}`);
       return true;
     } catch (e) {
-      console.log(`mint() failed from minter=${minterAddr}: ${e.message || e}`);
+      console.log(`  ✗ Mint from minter=${minterAddr} failed: ${e.message?.substring(0, 100) || e}`);
       return false;
     } finally {
       await stopImpersonate(minterAddr);
@@ -200,126 +160,251 @@ async function main() {
   };
 
   let minted = false;
+
+  // Priority 1: MINTER_ADDRESS env
   if (minterEnv) {
     minted = await tryMintAs(minterEnv);
+    if (minted) return true;
   }
 
-  if (!minted) {
-    // Try configureMinter via masterMinter (USDC-style)
-    const mm = await tryCall(token, "masterMinter");
-    const masterMinter = mm ? hre.ethers.getAddress(mm) : null;
-    if (masterMinter) {
-      const masterSigner = await impersonate(masterMinter);
-      const tokenAsMaster = new hre.ethers.Contract(target, tokenAbi, masterSigner);
-      try {
-        const txC = await tokenAsMaster.configureMinter(signer0.address, 1000000n);
-        const rC = await txC.wait();
-        console.log(
-          `configureMinter(signer0, 1000000) sent from masterMinter=${masterMinter}, block=${rC.blockNumber}, tx=${txC.hash}`
-        );
-      } catch (e) {
-        console.log(`configureMinter failed (maybe not USDC-style / wrong role): ${e.message || e}`);
-      } finally {
-        await stopImpersonate(masterMinter);
-      }
+  // Priority 2: Configure signer0 as minter via masterMinter
+  const mm = await tryCall(token, "masterMinter");
+  const masterMinter = mm ? hre.ethers.getAddress(mm) : null;
+  if (masterMinter) {
+    console.log(`  Found masterMinter: ${masterMinter}`);
+    const masterSigner = await impersonate(masterMinter);
+    const tokenAsMaster = new hre.ethers.Contract(target, tokenAbi, masterSigner);
+    try {
+      const txC = await tokenAsMaster["configureMinter"](signer0.address, 1000000n);
+      await txC.wait();
+      console.log(`  ✓ Configured signer0 as minter`);
+    } catch (e) {
+      console.log(`  configureMinter failed: ${e.message?.substring(0, 100) || e}`);
+    } finally {
+      await stopImpersonate(masterMinter);
+    }
 
-      try {
-        const txM2 = await token.mint(signer0.address, 1n);
-        const rM2 = await txM2.wait();
-        console.log(
-          `mint() sent from signer0 (after configureMinter attempt), block=${rM2.blockNumber}, tx=${txM2.hash}`
-        );
-        minted = true;
-      } catch (e) {
-        console.log(`mint() from signer0 failed (still not a minter): ${e.message || e}`);
-      }
+    try {
+      const txM2 = await token["mint"](signer0.address, 1n);
+      const rM2 = await txM2.wait();
+      console.log(`  ✓ Mint from signer0, block=${rM2.blockNumber}, tx=${rM2.hash}`);
+      return true;
+    } catch (e) {
+      console.log(`  ✗ Mint from signer0 failed: ${e.message?.substring(0, 100) || e}`);
     }
   }
 
+  // Priority 3: Discover minter from logs
   if (!minted) {
-    // Try discovering a minter address from recent Mint logs
-    const latest = await hre.ethers.provider.getBlockNumber();
-    const searchBlocks = BigInt(process.env.MINT_SEARCH_BLOCKS || "5000");
-    const from = latest > Number(searchBlocks) ? latest - Number(searchBlocks) : 0;
     try {
+      const latest = await hre.ethers.provider.getBlockNumber();
+      const searchBlocks = BigInt(process.env.MINT_SEARCH_BLOCKS || "5000");
+      const from = latest > Number(searchBlocks) ? latest - Number(searchBlocks) : 0;
       const logs = await hre.ethers.provider.getLogs({
         address: target,
         fromBlock: from,
         toBlock: latest,
         topics: [mintTopic0]
       });
-      const first = logs[0];
-      const discovered = first?.topics?.[1] ? topicToAddress(first.topics[1]) : null;
-      if (discovered) {
-        console.log(`discovered recent minter from Mint logs: ${discovered} (search ${from}..${latest})`);
-        minted = await tryMintAs(discovered);
-      } else {
-        console.log(`no Mint logs found in last ${searchBlocks.toString()} blocks; cannot auto-discover a minter`);
+      if (logs.length > 0) {
+        const discovered = logs[0]?.topics?.[1] ? topicToAddress(logs[0].topics[1]) : null;
+        if (discovered) {
+          console.log(`  Discovered minter from logs: ${discovered}`);
+          return await tryMintAs(discovered);
+        }
       }
+      console.log(`  No minter found in logs (${searchBlocks} blocks)`);
     } catch (e) {
-      console.log(`Mint log search failed: ${e.message || e}`);
+      console.log(`  Mint log search failed: ${e.message?.substring(0, 100) || e}`);
     }
   }
 
-  // 3) Try to emit Pause/Paused using a REAL pauser (env > onchain getter)
-  const pauserEnv = process.env.PAUSER_ADDRESS ? hre.ethers.getAddress(process.env.PAUSER_ADDRESS) : null;
-  let pauserAddr = pauserEnv;
-  if (!pauserAddr) {
-    const p = await tryCall(token, "pauser");
-    pauserAddr = p ? hre.ethers.getAddress(p) : null;
+  return false;
+}
+
+// async function injectPause(token, target, tokenAbi) {
+//   console.log(`\n[${new Date().toISOString()}] Injecting Pause event...`);
+
+//   const pauserEnv = process.env.PAUSER_ADDRESS ? hre.ethers.getAddress(process.env.PAUSER_ADDRESS) : null;
+//   let pauserAddr = pauserEnv;
+
+//   if (!pauserAddr) {
+//     const p = await tryCall(token, "pauser");
+//     pauserAddr = p ? hre.ethers.getAddress(p) : null;
+//   }
+
+//   if (pauserAddr) {
+//     const pauserSigner = await impersonate(pauserAddr);
+//     const tokenAsPauser = new hre.ethers.Contract(target, tokenAbi, pauserSigner);
+//     try {
+//       const txP = await tokenAsPauser["pause"]();
+//       const rP = await txP.wait();
+//       console.log(`  ✓ Pause from pauser=${pauserAddr}, block=${rP.blockNumber}, tx=${rP.hash}`);
+//       return true;
+//     } catch (e) {
+//       console.log(`  ✗ Pause failed: ${e.message?.substring(0, 100) || e}`);
+//       return false;
+//     } finally {
+//       await stopImpersonate(pauserAddr);
+//     }
+//   } else {
+//     console.log(`  ✗ No pauser available (env PAUSER_ADDRESS or pauser() getter)`);
+//     return false;
+//   }
+// }
+
+// async function injectUpgraded(target, proxyAbi) {
+//   console.log(`\n[${new Date().toISOString()}] Injecting Upgraded event...`);
+
+//   const adminWord = await hre.ethers.provider.getStorage(target, EIP1967_ADMIN_SLOT);
+//   const implWord = await hre.ethers.provider.getStorage(target, EIP1967_IMPL_SLOT);
+//   const admin = storageWordToAddress(adminWord);
+//   const impl = storageWordToAddress(implWord);
+
+//   if (admin && impl && admin !== hre.ethers.ZeroAddress && impl !== hre.ethers.ZeroAddress) {
+//     console.log(`  EIP-1967: admin=${admin}, impl=${impl}`);
+//     try {
+//       const adminSigner = await impersonate(admin);
+//       const proxy = new hre.ethers.Contract(target, proxyAbi, adminSigner);
+//       const txU = await proxy["upgradeTo"](impl);
+//       const rU = await txU.wait();
+//       console.log(`  ✓ Upgraded, block=${rU.blockNumber}, tx=${rU.hash}`);
+//       await stopImpersonate(admin);
+//       return true;
+//     } catch (e) {
+//       console.log(`  ✗ Upgraded failed: ${e.message?.substring(0, 100) || e}`);
+//       return false;
+//     }
+//   } else {
+//     console.log(`  ✗ EIP-1967 slots empty (admin=${admin}, impl=${impl})`);
+//     return false;
+//   }
+// }
+
+// ============================================================================
+// Main Injection Runner
+// ============================================================================
+
+async function runInjection(target, tokenAbi, proxyAbi, signer0, options = {}) {
+  const token = new hre.ethers.Contract(target, tokenAbi, signer0);
+  let success = 0;
+  let failed = 0;
+
+  if (options.transfer) {
+    if (await injectTransfer(token, target, signer0)) success++; else failed++;
   }
-  if (pauserAddr) {
-    const pauserSigner = await impersonate(pauserAddr);
-    const tokenAsPauser = new hre.ethers.Contract(target, tokenAbi, pauserSigner);
-    try {
-      const txP = await tokenAsPauser.pause();
-      const rP = await txP.wait();
-      console.log(`pause() sent from pauser=${pauserAddr}, block=${rP.blockNumber}, tx=${txP.hash}`);
-    } catch (e) {
-      console.log(`pause() failed from pauser=${pauserAddr}: ${e.message || e}`);
-    } finally {
-      await stopImpersonate(pauserAddr);
-    }
+
+  if (options.mint) {
+    if (await injectMint(token, target, tokenAbi, signer0)) success++; else failed++;
+  }
+
+  if (options.pause) {
+    if (await injectPause(token, target, tokenAbi)) success++; else failed++;
+  }
+
+  if (options.upgraded) {
+    if (await injectUpgraded(target, proxyAbi)) success++; else failed++;
+  }
+
+  return { success, failed };
+}
+
+async function main() {
+  const isContinuous = process.argv.includes("continuous");
+  const noReset = process.env.NO_RESET === "true";
+  const target = hre.ethers.getAddress(process.env.TARGET_ADDRESS || DEFAULT_TARGET);
+  const interval = parseInt(process.env.INTERVAL) || DEFAULT_INTERVAL;
+  const count = parseInt(process.env.COUNT) || Infinity;
+
+  // Injection options
+  const envInjectTransfer = process.env.INJECT_TRANSFER === "true";
+  const envInjectMint = process.env.INJECT_MINT === "true";
+  const envInjectPause = process.env.INJECT_PAUSE === "true";
+  const envInjectUpgraded = process.env.INJECT_UPGRADED === "true";
+
+  console.log("=".repeat(70));
+  console.log("XDC USDC Event Injection - Continuous Test Mode");
+  console.log("=".repeat(70));
+  console.log(`Mode: ${isContinuous ? "CONTINUOUS" : "SINGLE RUN"}`);
+  console.log(`Reset fork before injection: ${!noReset}`);
+  console.log(`Target: ${target}`);
+  console.log(`Interval: ${interval}s`);
+  console.log(`Count: ${count === Infinity ? "unlimited" : count}`);
+  console.log(`Events to inject: ${[
+    envInjectTransfer ? "Transfer" : "",
+    envInjectMint ? "Mint" : "",
+    envInjectPause ? "Pause" : "",
+    envInjectUpgraded ? "Upgraded" : ""
+  ].filter(x => x).join(", ") || "all"}`);
+  console.log("=".repeat(70));
+
+  // Load proxy ABI
+  const proxyAbiPath = path.join(__dirname, "../../contracts/XDCS_USDC/usdcabi.json");
+  const proxyAbi = JSON.parse(fs.readFileSync(proxyAbiPath, "utf8"));
+
+  const [signer0] = await hre.ethers.getSigners();
+
+  // Optional: Reset fork to get fresh state
+  if (!noReset) {
+    const upstream = process.env.XDC_RPC_URL || "https://rpc.ankr.com/xdc";
+    console.log(`\nResetting fork from ${upstream}...`);
+    await hre.network.provider.send("hardhat_reset", [
+      {
+        forking: { jsonRpcUrl: upstream }
+      }
+    ]);
+    console.log(`✓ Fork reset complete`);
   } else {
-    console.log(`Skip pause(): no PAUSER_ADDRESS provided and pauser() getter not available`);
+    console.log(`\nSkipping fork reset (NO_RESET=true)`);
   }
 
-  // 4) Try to emit Upgraded (best-effort): this depends on the target being upgradeable + correct admin/ABI.
-  const adminWord = await hre.ethers.provider.getStorage(target, EIP1967_ADMIN_SLOT);
-  const implWord = await hre.ethers.provider.getStorage(target, EIP1967_IMPL_SLOT);
-  const admin = storageWordToAddress(adminWord);
-  const impl = storageWordToAddress(implWord);
+  // Options: use env vars, or default to all events for single run
+  const injectionOptions = {
+    transfer: envInjectTransfer || !isContinuous,
+    mint: envInjectMint || !isContinuous,
+    pause: envInjectPause || !isContinuous,
+    upgraded: envInjectUpgraded || !isContinuous
+  };
 
-  // IMPORTANT: if admin/impl decode to the zero address, DO NOT attempt impersonation,
-  // otherwise you'll create confusing "from=0x0" transactions that may match your monitor.
-  if (admin && impl && admin !== hre.ethers.ZeroAddress && impl !== hre.ethers.ZeroAddress) {
-    console.log(`EIP-1967 slots decoded: admin=${admin}, impl=${impl}`);
+  if (isContinuous) {
+    console.log(`\n🚀 Starting continuous injection mode...`);
+    console.log(`   Press Ctrl+C to stop`);
+    console.log("");
 
-    try {
-      const adminSigner = await impersonate(admin);
-      const proxy = new hre.ethers.Contract(target, proxyAbi, adminSigner);
+    let injectionCount = 0;
+    const startTime = Date.now();
 
-      // upgradeTo(currentImplementation) *might* emit Upgraded(...) while keeping implementation unchanged.
-      // Some deployments are not OZ Transparent proxies / not EIP-1967, or upgradeTo is access-controlled differently.
-      const txU = await proxy.upgradeTo(impl);
-      await txU.wait();
-      console.log(`Upgraded emitted (best-effort), tx=${txU.hash}`);
-      await stopImpersonate(admin);
-    } catch (e) {
-      console.log(
-        `upgradeTo(...) attempt failed (this may mean the target isn't an EIP-1967 OZ proxy, or admin/ABI is different): ${e.message || e}`
-      );
+    while (injectionCount < count) {
+      injectionCount++;
+      console.log(`\n${"=".repeat(50)}`);
+      console.log(`Injection #${injectionCount}/${count === Infinity ? "∞" : count}`);
+      console.log(`${"=".repeat(50)}`);
+
+      const { success, failed } = await runInjection(target, MINIMAL_TOKEN_ABI, proxyAbi, signer0, injectionOptions);
+
+      if (injectionCount < count) {
+        console.log(`\n⏳ Waiting ${interval}s before next injection...`);
+        await new Promise(resolve => setTimeout(resolve, interval * 1000));
+      }
     }
+
+    const totalTime = Math.round((Date.now() - startTime) / 1000);
+    console.log(`\n${"=".repeat(70)}`);
+    console.log(`✓ Completed ${injectionCount} injections in ${totalTime}s`);
+    console.log("=".repeat(70));
   } else {
-    console.log(`Skip Upgraded: EIP-1967 admin/impl slots look empty on this target`);
+    // Single run mode
+    console.log(`\n🚀 Running single injection...`);
+    const { success, failed } = await runInjection(target, MINIMAL_TOKEN_ABI, proxyAbi, signer0, injectionOptions);
+    console.log(`\nDone: ${success} success, ${failed} failed`);
   }
 
-  console.log(`Done on network=${hre.network.name}, target=${target}`);
+  console.log(`\nNetwork: ${hre.network.name}`);
+  console.log(`Target: ${target}`);
 }
 
 main().catch((err) => {
   console.error(err);
   process.exitCode = 1;
 });
-
 
