@@ -12,7 +12,7 @@ const hre = require("hardhat");
 
 const USDC_ADDRESS =  "0xfa2958cb79b0491cc627c1557f441ef849ca8eb1";
 const MASTER_MINTER_ADDRESS = "0x95957689132Db66CE1B773F681eF2349B7D35127";
-const MINT_AMOUNT = 50n;
+const MINT_AMOUNT =90n;
 
 // ABI for USDC FiatToken contract
 const TOKEN_ABI = [
