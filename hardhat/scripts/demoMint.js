@@ -56,7 +56,7 @@ async function main() {
   const noReset = process.env.NO_RESET === "true";
 
   console.log('\n' + '='.repeat(70));
-  console.log('🪙 Mint 事件演示脚本');
+  console.log('Mint event injection demo script');
   console.log('='.repeat(70));
   console.log(`Mode: Fork ${noReset ? '(NO RESET)' : '(RESET)'}`);
   console.log(`Target: ${USDC_ADDRESS}`);
