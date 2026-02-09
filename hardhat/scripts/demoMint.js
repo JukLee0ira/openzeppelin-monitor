@@ -12,7 +12,7 @@ const hre = require("hardhat");
 
 const USDC_ADDRESS =  "0xfa2958cb79b0491cc627c1557f441ef849ca8eb1";
 const MASTER_MINTER_ADDRESS = "0x95957689132Db66CE1B773F681eF2349B7D35127";
-const MINT_AMOUNT =90n;
+const MINT_AMOUNT =25n;
 
 // ABI for USDC FiatToken contract
 const TOKEN_ABI = [
@@ -115,7 +115,7 @@ async function main() {
   }
 
   console.log('\n' + '='.repeat(70));
-  console.log('✅ Mint 事件注入完成');
+  console.log('✅ Mint event injection completed');
   console.log('='.repeat(70));
 }
 
@@ -123,7 +123,7 @@ if (require.main === module) {
   main()
     .then(() => process.exit(0))
     .catch((error) => {
-      console.error('\n❌ Mint 事件演示失败:');
+      console.error('\n❌ Mint event injection failed:');
       console.error(error);
       process.exit(1);
     });

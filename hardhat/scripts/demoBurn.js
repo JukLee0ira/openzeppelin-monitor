@@ -184,7 +184,7 @@ async function main() {
   }
 
   console.log('\n' + '='.repeat(70));
-  console.log('✅ Burn 事件注入完成');
+  console.log('✅ Burn event injection completed');
   console.log('='.repeat(70));
 }
 
@@ -192,7 +192,7 @@ if (require.main === module) {
   main()
     .then(() => process.exit(0))
     .catch((error) => {
-      console.error('\n❌ Burn 事件演示失败:');
+      console.error('\n❌ Burn event injection failed:');
       console.error(error);
       process.exit(1);
     });
