@@ -1,0 +1,42 @@
+{
+  "description": "Mint source address classification for USDC on XDC",
+  "version": "1.0.0",
+  "last_updated": "2026-02-23",
+  "sources": {
+    "NATIVE_MINTER": {
+      "label": "Native Minter",
+      "description": "Directly minted by authorized minter (no bridge)",
+      "addresses": ["0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"]
+    },
+    "XDC_OFFICIAL_BRIDGE": {
+      "label": "XDC Official Bridge",
+      "description": "Minted via XDC Official Bridge (xdc.org)",
+      "addresses": [
+        "0x70997970C51812dc3A010C7d01b50e0d17dc79C8"
+      ]
+    },
+    "STARGATE_BRIDGE": {
+      "label": "Stargate Bridge",
+      "description": "Minted via Stargate Protocol",
+      "addresses": [
+        "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC"
+      ]
+    },
+    "MULTICHAIN_BRIDGE": {
+      "label": "Multichain Bridge",
+      "description": "Minted via Multichain (AnySwap)",
+      "addresses": []
+    },
+    "UNKNOWN": {
+      "label": "Unknown Source",
+      "description": "Unrecognized mint source",
+      "addresses": []
+    }
+  },
+  "default_source": "UNKNOWN",
+  "fallback_behavior": {
+    "when_not_matched": "UNKNOWN",
+    "when_minted_from_zero_address": "NATIVE_MINTER"
+  }
+}
+

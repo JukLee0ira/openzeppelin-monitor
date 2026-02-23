@@ -12,10 +12,10 @@
 //! # Handlers
 //! - `create_block_handler`: Creates a block handler function that processes new blocks from the
 //!   blockchain
-//! - `create_triggeocessing pipeline
+//! - `create_trigger_handler`: Creates a trigger handler function that processes trigger events
+//!   from the block processing pipeline
 
-use futures::future::BoxFuture;r_handler`: Creates a trigger handler function that processes trigger events
-//!   from the block pr
+use futures::future::BoxFuture;
 use std::{collections::HashMap, error::Error, sync::Arc};
 use tokio::sync::{watch, Mutex};
 
