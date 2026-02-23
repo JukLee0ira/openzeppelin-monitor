@@ -6,13 +6,13 @@ const hre = require("hardhat");
  * Usage:
  *   npm run demo:emit:mint           # Single run, reset fork first
  *   NO_RESET=true npm run demo:emit:mint   # Don't reset fork
- *   USDC_ADDRESS=0x... MASTER_MINTER=0x... MINT_AMOUNT=1000 npm run demo:emit:mint
  *   MINT_AMOUNT=5000 npm run demo:emit:mint   # Mint 5000 USDC
  */
 
-const USDC_ADDRESS =  "0xfa2958cb79b0491cc627c1557f441ef849ca8eb1";
+const USDC_ADDRESS = "0xfa2958cb79b0491cc627c1557f441ef849ca8eb1";
 const MASTER_MINTER_ADDRESS = "0x95957689132Db66CE1B773F681eF2349B7D35127";
-const MINT_AMOUNT =25n;
+const MINT_AMOUNT = 25n;
+const MINT_DELAY_MS = 5000; // Delay between each mint (3 seconds)
 
 // ABI for USDC FiatToken contract
 const TOKEN_ABI = [
@@ -52,6 +52,10 @@ async function stopImpersonate(address) {
   await hre.network.provider.send("hardhat_stopImpersonatingAccount", [address]);
 }
 
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 async function main() {
   const noReset = process.env.NO_RESET === "true";
 
@@ -62,6 +66,7 @@ async function main() {
   console.log(`Target: ${USDC_ADDRESS}`);
   console.log(`MasterMinter: ${MASTER_MINTER_ADDRESS}`);
   console.log(`Mint Amount: ${MINT_AMOUNT}`);
+  console.log(`Mint Delay: ${MINT_DELAY_MS}ms`);
 
   // Reset fork (unless NO_RESET=true)
   if (!noReset) {
@@ -75,43 +80,46 @@ async function main() {
     console.log(`\n⏭️ Skipping fork reset (NO_RESET=true)`);
   }
 
-  // Get signers
-  const [signer0, signer1] = await hre.ethers.getSigners();
-  console.log(`\n👤 Signer0: ${signer0.address}`);
-  console.log(`   Signer1: ${signer1.address}`);
+  // Get signers - use first 3 signers as minters
+  const signers = await hre.ethers.getSigners();
+  const minterAddresses = [signers[0].address, signers[1].address, signers[2].address];
 
-  const token = new hre.ethers.Contract(USDC_ADDRESS, TOKEN_ABI, signer0);
+  console.log(`\n👤 Minter Addresses:`);
+  minterAddresses.forEach((addr, i) => console.log(`   Minter${i + 1}: ${addr}`));
 
-  // Step 1: Impersonate masterMinter and configure signer0 as minter
-  console.log(`\n🔧 Step 1: Configuring signer0 as minter...`);
+  // Step 1: Impersonate masterMinter and configure 3 minter addresses
+  console.log(`\n🔧 Step 1: Configuring 3 minters...`);
   const masterSigner = await impersonate(MASTER_MINTER_ADDRESS);
   const tokenAsMaster = new hre.ethers.Contract(USDC_ADDRESS, TOKEN_ABI, masterSigner);
 
-  try {
-    const txC = await tokenAsMaster.configureMinter(signer0.address, MINT_AMOUNT * 10000n);
-    await txC.wait();
-    console.log(`   ✅ Configured signer0 as minter (limit: ${MINT_AMOUNT * 10000n})`);
-  } catch (e) {
-    console.log(`   ⚠️ configureMinter failed: ${e.message?.substring(0, 80)}`);
-    await stopImpersonate(MASTER_MINTER_ADDRESS);
-    throw e;
+  for (let i = 0; i < minterAddresses.length; i++) {
+    try {
+      const txC = await tokenAsMaster.configureMinter(minterAddresses[i], MINT_AMOUNT * 10000n);
+      await txC.wait();
+      console.log(`   ✅ Configured Minter${i + 1} (${minterAddresses[i]}) with limit ${MINT_AMOUNT * 10000n}`);
+    } catch (e) {
+      console.log(`   ⚠️ configureMinter for Minter${i + 1} failed: ${e.message?.substring(0, 80)}`);
+    }
   }
   await stopImpersonate(MASTER_MINTER_ADDRESS);
 
-  // Step 2: Mint as signer0
-  console.log(`\n🪙 Step 2: Minting ${MINT_AMOUNT} USDC...`);
-  try {
-    const txM = await token.mint(signer1.address, MINT_AMOUNT);
-    const rM = await txM.wait();
-    console.log(`   ✅ Mint success!`);
-    console.log(`   From: ${signer0.address}`);
-    console.log(`   To: ${signer1.address}`);
-    console.log(`   Amount: ${MINT_AMOUNT} USDC`);
-    console.log(`   Block: ${rM.blockNumber}`);
-    console.log(`   Tx: ${rM.hash}`);
-  } catch (e) {
-    console.log(`   ❌ Mint failed: ${e.message?.substring(0, 100)}`);
-    throw e;
+  // Step 2: Mint from each minter
+  console.log(`\n🪙 Step 2: Minting from 3 minters...`);
+  for (let i = 0; i < minterAddresses.length; i++) {
+    try {
+      const tokenAsMinter = new hre.ethers.Contract(USDC_ADDRESS, TOKEN_ABI, signers[i]);
+      const txM = await tokenAsMinter.mint(signers[3].address, MINT_AMOUNT);
+      const rM = await txM.wait();
+      console.log(`   ✅ Minter${i + 1} minted ${MINT_AMOUNT} USDC!`);
+      console.log(`      Block: ${rM.blockNumber}, Tx: ${rM.hash}`);
+    } catch (e) {
+      console.log(`   ❌ Minter${i + 1} mint failed: ${e.message?.substring(0, 100)}`);
+    }
+    // Wait between mints to allow monitor to catch each event
+    if (i < minterAddresses.length - 1) {
+      console.log(`   ⏳ Waiting ${MINT_DELAY_MS}ms before next mint...`);
+      await sleep(MINT_DELAY_MS);
+    }
   }
 
   console.log('\n' + '='.repeat(70));
