@@ -310,6 +310,7 @@ impl InfluxClient {
 
         // Write to InfluxDB
         if !lines.is_empty() {
+            tracing::info!("Writing {} lines to InfluxDB: {:?}", lines.len(), lines);
             self.write_line_protocol(lines).await?;
         }
 
@@ -335,7 +336,7 @@ impl InfluxClient {
         );
 
         vec![
-            format!("blocks,{} block_number={}i,tx_count={}i,match_count={}i",
+            format!("blocks,{} block_number={},tx_count={}i,match_count={}i",
                 tags, block_number, tx_count, match_count)
         ]
     }
@@ -343,12 +344,12 @@ impl InfluxClient {
     /// Build line protocol for events with mint_source tag
     fn build_event_lines(&self, network: &Network, matches: &[MonitorMatch]) -> Vec<String> {
         let mut lines = Vec::new();
-        let timestamp = std::time::SystemTime::now()
+        let base_timestamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_nanos() as u64)
             .unwrap_or(0);
 
-        for monitor_match in matches {
+        for (match_idx, monitor_match) in matches.iter().enumerate() {
             let mint_source = self.classify_mint_source(monitor_match);
 
             let monitor_name = match monitor_match {
@@ -375,11 +376,14 @@ impl InfluxClient {
 
                     if let Some(ref args) = evm_match.matched_on_args {
                         if let Some(ref events) = args.events {
-                            for event in events {
+                            for (event_idx, event) in events.iter().enumerate() {
                                 let signature = &event.signature;
 
                                 if let Some(ref event_args) = event.args {
-                                    for arg in event_args {
+                                    for (arg_idx, arg) in event_args.iter().enumerate() {
+                                        // Add nanosecond offset to ensure unique timestamps for each event/arg
+                                        let timestamp = base_timestamp + (match_idx as u64 * 10000) + (event_idx as u64 * 100) + (arg_idx as u64);
+
                                         let field_name = &arg.name;
                                         let value = &arg.value;
 
@@ -415,8 +419,8 @@ impl InfluxClient {
 
                                         lines.push(format!("events,{} {} {}", tags, fields, timestamp));
 
-                                        // Debug log
-                                        tracing::debug!("Line protocol: events,{} {} {}", tags, fields, timestamp);
+                                        // Log the actual line protocol for debugging
+                                        tracing::info!("Line protocol: events,{} {} {}", tags, fields, timestamp);
                                     }
                                 }
                             }
@@ -433,6 +437,9 @@ impl InfluxClient {
 
 /// Escape special characters in InfluxDB tag values
 fn escape_tag_value(s: &str) -> String {
+    // InfluxDB tag values have strict character restrictions
+    // Must escape: , = space ( ) [ ]
+    // Also escape + and - to be safe
     s.replace("\\", "\\\\")
      .replace(",", "\\,")
      .replace("=", "\\=")
@@ -441,6 +448,8 @@ fn escape_tag_value(s: &str) -> String {
      .replace(")", "\\)")
      .replace("[", "\\[")
      .replace("]", "\\]")
+     .replace("+", "\\+")
+     .replace("-", "\\-")
 }
 
 /// Escape special characters in InfluxDB field values (strings)
