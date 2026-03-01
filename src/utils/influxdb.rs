@@ -142,13 +142,6 @@ impl MintSourcesConfig {
             }
         }
 
-        // If minter is the caller (direct mint), classify as native
-        if let Some(ref m) = minter_lower {
-            if m.as_str() == caller_lower {
-                return "NATIVE_MINTER".to_string();
-            }
-        }
-
         // Default fallback
         self.fallback_behavior.when_not_matched.clone()
     }
@@ -475,13 +468,6 @@ mod tests {
                     MintSource {
                         label: "XDC Official Bridge".to_string(),
                         addresses: vec!["0x1234567890123456789012345678901234567890".to_string()],
-                    },
-                );
-                m.insert(
-                    "STARGATE_BRIDGE".to_string(),
-                    MintSource {
-                        label: "Stargate".to_string(),
-                        addresses: vec!["0xabcdefabcdefabcdefabcdefabcdefabcdefabcd".to_string()],
                     },
                 );
                 m
