@@ -383,21 +383,26 @@ impl InfluxClient {
                                         let field_name = &arg.name;
                                         let value = &arg.value;
 
-                                        // Build tags - escape commas and spaces properly
+                                        // Build tags - signature moved to field to avoid escaping issues
                                         let tags = format!(
-                                            "kind=event,monitor_name=\"{}\",network_slug={},signature=\"{}\",mint_source={}",
+                                            "kind=event,monitor_name=\"{}\",network_slug={},mint_source={}",
                                             escape_tag_value(&monitor_name),
                                             escape_tag_value(&network.slug),
-                                            escape_tag_value(signature),
                                             escape_tag_value(&mint_source)
                                         );
 
                                         // Use caller address for from_addr, keep original from as from_event
+                                        // Rename "to" to "to_addr" for consistency with from_addr
                                         let mut fields = if field_name == "from" {
                                             format!("from_event=\"{}\"", escape_field_value(value))
+                                        } else if field_name == "to" {
+                                            format!("to_addr=\"{}\"", escape_field_value(value))
                                         } else {
                                             format!("{}=\"{}\"", field_name, escape_field_value(value))
                                         };
+
+                                        // Add signature as field
+                                        fields.push_str(&format!(",signature=\"{}\"", escape_field_value(signature)));
 
                                         // Add from_addr (transaction sender)
                                         if let Some(ref ca) = caller_addr {
