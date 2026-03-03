@@ -17,8 +17,10 @@ module.exports = {
      */
     hardhat: {
       chainId: 50,
+      hardfork: "cancun",  // Use latest hardfork to avoid historical block issues
       forking: {
-        url: XDC_RPC_URL
+        url: XDC_RPC_URL,
+        blockNumber: undefined  // Fork from latest block by default
       }
     },
     /**

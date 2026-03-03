@@ -12,12 +12,17 @@
     "demo:emit:real:continuous": "hardhat run ./scripts/demoEmitRealUsdc.js --network localhost continuous",
     "demo:emit:mint": "hardhat run ./scripts/demoMint.js --network localhost",
     "demo:emit:burn": "hardhat run ./scripts/demoBurn.js --network localhost",
-    "demo:emit:transfer": "hardhat run ./scripts/demoTransfer.js --network localhost"
+    "demo:emit:transfer": "hardhat run ./scripts/demoTransfer.js --network localhost",
+    "poll:supply": "hardhat run ./scripts/pollSupply.js --network localhost",
+    "poll:supply:remote": "hardhat run ./scripts/pollSupply.js --network xdc_mainnet",
+    "clear:supply": "hardhat run ./scripts/clearSupply.js --network localhost",
+    "query:supply": "hardhat run ./scripts/querySupply.js --network localhost"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^6.1.0",
     "hardhat": "^2.22.19"
+  },
+  "dependencies": {
+    "dotenv": "^17.3.1"
   }
 }
-
-
