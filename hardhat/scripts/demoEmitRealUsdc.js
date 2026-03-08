@@ -1,6 +1,7 @@
 const hre = require("hardhat");
 const fs = require("fs");
 const path = require("path");
+const { getSigners, resetFork, impersonateAccountAccount, stopImpersonating, getRpcUrl, getProvider, getNetworkName } = require("./network");
 
 /**
  * Real-mode demo for continuous event injection testing.
@@ -90,20 +91,6 @@ function storageWordToAddress(word) {
   return hre.ethers.getAddress("0x" + word.slice(26));
 }
 
-async function setBalance(address) {
-  await hre.network.provider.send("hardhat_setBalance", [address, "0x56BC75E2D63100000"]);
-}
-
-async function impersonate(address) {
-  await hre.network.provider.send("hardhat_impersonateAccount", [address]);
-  await setBalance(address);
-  return await hre.ethers.getSigner(address);
-}
-
-async function stopImpersonate(address) {
-  await hre.network.provider.send("hardhat_stopImpersonatingAccount", [address]);
-}
-
 async function tryCall(contract, fn, args = []) {
   try {
     return await contract[fn](...args);
@@ -144,7 +131,7 @@ async function injectMint(token, target, tokenAbi, signer0) {
 
   // Try to mint as a specific address
   const tryMintAs = async (minterAddr) => {
-    const minterSigner = await impersonate(minterAddr);
+    const minterSigner = await impersonateAccount(minterAddr);
     const tokenAsMinter = new hre.ethers.Contract(target, tokenAbi, minterSigner);
     try {
       const txM = await tokenAsMinter["mint"](signer0.address, 100n);
@@ -155,7 +142,7 @@ async function injectMint(token, target, tokenAbi, signer0) {
       console.log(`  ✗ Mint from minter=${minterAddr} failed: ${e.message?.substring(0, 100) || e}`);
       return false;
     } finally {
-      await stopImpersonate(minterAddr);
+      await stopImpersonating(minterAddr);
     }
   };
 
@@ -172,7 +159,7 @@ async function injectMint(token, target, tokenAbi, signer0) {
   const masterMinter = mm ? hre.ethers.getAddress(mm) : null;
   if (masterMinter) {
     console.log(`  Found masterMinter: ${masterMinter}`);
-    const masterSigner = await impersonate(masterMinter);
+    const masterSigner = await impersonateAccount(masterMinter);
     const tokenAsMaster = new hre.ethers.Contract(target, tokenAbi, masterSigner);
     try {
       const txC = await tokenAsMaster["configureMinter"](signer0.address, 1000000n);
@@ -181,7 +168,7 @@ async function injectMint(token, target, tokenAbi, signer0) {
     } catch (e) {
       console.log(`  configureMinter failed: ${e.message?.substring(0, 100) || e}`);
     } finally {
-      await stopImpersonate(masterMinter);
+      await stopImpersonating(masterMinter);
     }
 
     try {
@@ -197,10 +184,11 @@ async function injectMint(token, target, tokenAbi, signer0) {
   // Priority 3: Discover minter from logs
   if (!minted) {
     try {
-      const latest = await hre.ethers.provider.getBlockNumber();
+      const provider = getProvider();
+      const latest = await provider.getBlockNumber();
       const searchBlocks = BigInt(process.env.MINT_SEARCH_BLOCKS || "5000");
       const from = latest > Number(searchBlocks) ? latest - Number(searchBlocks) : 0;
-      const logs = await hre.ethers.provider.getLogs({
+      const logs = await provider.getLogs({
         address: target,
         fromBlock: from,
         toBlock: latest,
@@ -234,7 +222,7 @@ async function injectMint(token, target, tokenAbi, signer0) {
 //   }
 
 //   if (pauserAddr) {
-//     const pauserSigner = await impersonate(pauserAddr);
+//     const pauserSigner = await impersonateAccount(pauserAddr);
 //     const tokenAsPauser = new hre.ethers.Contract(target, tokenAbi, pauserSigner);
 //     try {
 //       const txP = await tokenAsPauser["pause"]();
@@ -245,7 +233,7 @@ async function injectMint(token, target, tokenAbi, signer0) {
 //       console.log(`  ✗ Pause failed: ${e.message?.substring(0, 100) || e}`);
 //       return false;
 //     } finally {
-//       await stopImpersonate(pauserAddr);
+//       await stopImpersonating(pauserAddr);
 //     }
 //   } else {
 //     console.log(`  ✗ No pauser available (env PAUSER_ADDRESS or pauser() getter)`);
@@ -264,12 +252,12 @@ async function injectMint(token, target, tokenAbi, signer0) {
 //   if (admin && impl && admin !== hre.ethers.ZeroAddress && impl !== hre.ethers.ZeroAddress) {
 //     console.log(`  EIP-1967: admin=${admin}, impl=${impl}`);
 //     try {
-//       const adminSigner = await impersonate(admin);
+//       const adminSigner = await impersonateAccount(admin);
 //       const proxy = new hre.ethers.Contract(target, proxyAbi, adminSigner);
 //       const txU = await proxy["upgradeTo"](impl);
 //       const rU = await txU.wait();
 //       console.log(`  ✓ Upgraded, block=${rU.blockNumber}, tx=${rU.hash}`);
-//       await stopImpersonate(admin);
+//       await stopImpersonating(admin);
 //       return true;
 //     } catch (e) {
 //       console.log(`  ✗ Upgraded failed: ${e.message?.substring(0, 100) || e}`);
@@ -342,17 +330,13 @@ async function main() {
   const proxyAbiPath = path.join(__dirname, "../../contracts/XDCS_USDC/usdcabi.json");
   const proxyAbi = JSON.parse(fs.readFileSync(proxyAbiPath, "utf8"));
 
-  const [signer0] = await hre.ethers.getSigners();
+  const [signer0] = await getSigners();
 
   // Optional: Reset fork to get fresh state
   if (!noReset) {
-    const upstream = process.env.XDC_RPC_URL || "https://rpc.ankr.com/xdc";
+    const upstream = getRpcUrl();
     console.log(`\nResetting fork from ${upstream}...`);
-    await hre.network.provider.send("hardhat_reset", [
-      {
-        forking: { jsonRpcUrl: upstream }
-      }
-    ]);
+    await resetFork(upstream);
     console.log(`✓ Fork reset complete`);
   } else {
     console.log(`\nSkipping fork reset (NO_RESET=true)`);
@@ -399,7 +383,7 @@ async function main() {
     console.log(`\nDone: ${success} success, ${failed} failed`);
   }
 
-  console.log(`\nNetwork: ${hre.network.name}`);
+  console.log(`\nNetwork: ${getNetworkName()}`);
   console.log(`Target: ${target}`);
 }
 

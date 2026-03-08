@@ -1,4 +1,5 @@
 const hre = require("hardhat");
+const { getSigners, resetFork, impersonateAccount, stopImpersonating, getContractWithSigner, getRpcUrl, getProvider } = require("./network");
 
 /**
  * Simple Burn event injection demo.
@@ -75,20 +76,6 @@ const TOKEN_ABI = [
   }
 ];
 
-async function setBalance(address) {
-  await hre.network.provider.send("hardhat_setBalance", [address, "0x56BC75E2D63100000"]);
-}
-
-async function impersonate(address) {
-  await hre.network.provider.send("hardhat_impersonateAccount", [address]);
-  await setBalance(address);
-  return await hre.ethers.getSigner(address);
-}
-
-async function stopImpersonate(address) {
-  await hre.network.provider.send("hardhat_stopImpersonatingAccount", [address]);
-}
-
 async function main() {
   const noReset = process.env.NO_RESET === "true";
 
@@ -102,27 +89,25 @@ async function main() {
 
   // Reset fork (unless NO_RESET=true)
   if (!noReset) {
-    const upstream = process.env.XDC_RPC_URL || "https://rpc.ankr.com/xdc";
+    const upstream = getRpcUrl();
     console.log(`\n🔄 Resetting fork from ${upstream}...`);
-    await hre.network.provider.send("hardhat_reset", [
-      { forking: { jsonRpcUrl: upstream } }
-    ]);
+    await resetFork(upstream);
     console.log(`✅ Fork reset complete`);
   } else {
     console.log(`\n⏭️ Skipping fork reset (NO_RESET=true)`);
   }
 
   // Get signers
-  const [signer0, signer1] = await hre.ethers.getSigners();
+  const [signer0, signer1] = await getSigners();
   console.log(`\n👤 Signer0: ${signer0.address}`);
   console.log(`   Signer1: ${signer1.address}`);
 
-  const token = new hre.ethers.Contract(USDC_ADDRESS, TOKEN_ABI, signer0);
+  const token = getContractWithSigner(USDC_ADDRESS, signer0, TOKEN_ABI);
 
   // Step 1: Configure signer0 as minter
   console.log(`\n🔧 Step 1: Configuring signer0 as minter...`);
-  const masterSigner = await impersonate(MASTER_MINTER_ADDRESS);
-  const tokenAsMaster = new hre.ethers.Contract(USDC_ADDRESS, TOKEN_ABI, masterSigner);
+  const masterSigner = await impersonateAccount(MASTER_MINTER_ADDRESS);
+  const tokenAsMaster = getContractWithSigner(USDC_ADDRESS, masterSigner, TOKEN_ABI);
 
   try {
     const txC = await tokenAsMaster.configureMinter(signer0.address, BURN_AMOUNT * 10000n);
@@ -130,10 +115,10 @@ async function main() {
     console.log(`   ✅ Configured signer0 as minter (limit: ${BURN_AMOUNT * 10000n})`);
   } catch (e) {
     console.log(`   ⚠️ configureMinter failed: ${e.message?.substring(0, 80)}`);
-    await stopImpersonate(MASTER_MINTER_ADDRESS);
+    await stopImpersonating(MASTER_MINTER_ADDRESS);
     throw e;
   }
-  await stopImpersonate(MASTER_MINTER_ADDRESS);
+  await stopImpersonating(MASTER_MINTER_ADDRESS);
 
   // Step 2: Mint to signer0 (so they have tokens to burn)
   console.log(`\n💰 Step 2: Minting ${BURN_AMOUNT} USDC to signer0...`);
@@ -173,7 +158,8 @@ async function main() {
   // Step 4: Get signer0's balance after burn
   console.log(`\n📊 Step 4: Checking balance after burn...`);
   try {
-    const balanceAfterData = await hre.ethers.provider.send("eth_call", [{
+    const provider = getProvider();
+    const balanceAfterData = await provider.send("eth_call", [{
       to: USDC_ADDRESS,
       data: "0x70a08231000000000000000000000000" + signer0.address.slice(2).toLowerCase()
     }, "latest"]);

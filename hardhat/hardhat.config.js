@@ -25,11 +25,16 @@ module.exports = {
     },
     /**
      * When you run `npm run node`, Hardhat exposes a JSON-RPC endpoint.
-     * In scripts, use `--network localhost` to hit that endpoint.
+     * We configure it to FORK XDC mainnet so scripts can interact with
+     * real XDC contracts (like USDC) while running locally.
      */
     localhost: {
       url: "http://127.0.0.1:8545",
-      chainId: 50
+      chainId: 50,
+      forking: {
+        url: XDC_RPC_URL,
+        blockNumber: undefined
+      }
     }
   }
 };

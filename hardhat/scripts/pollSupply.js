@@ -30,6 +30,7 @@
 
 const hre = require("hardhat");
 const path = require("path");
+const { getProvider, getNetworkName } = require("./network");
 
 // 加载环境变量：优先从项目根目录 .env 加载，其次从 config/influxdb.env 加载
 require("dotenv").config({ path: path.resolve(__dirname, "../../.env") });
@@ -103,8 +104,8 @@ async function pollTotalSupply() {
   const timestamp = Date.now() * 1_000_000; // 纳秒
   
   try {
-    // 获取 provider
-    const provider = hre.ethers.provider;
+    // 获取 provider (使用统一的 network.js)
+    const provider = getProvider();
     
     // 获取当前区块号
     const block = await provider.getBlockNumber();
@@ -148,7 +149,7 @@ async function pollTotalSupply() {
     if (error.message && error.message.includes("hardfork")) {
       console.log("⚠️  检测到 hardfork 错误，尝试使用最新状态重试...");
       try {
-        const provider = hre.ethers.provider;
+        const provider = getProvider();
         const block = await provider.getBlockNumber();
         const usdc = new hre.ethers.Contract(USDC_ADDRESS, SUPPLY_ABI, provider);
         
@@ -182,7 +183,7 @@ async function pollTotalSupply() {
  * 主函数
  */
 async function main() {
-  const networkName = hre.network.name;
+  const networkName = getNetworkName();
   const isLocal = networkName === "localhost" || networkName === "hardhat";
   
   console.log("\n" + "=".repeat(60));

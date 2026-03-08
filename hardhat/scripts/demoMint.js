@@ -1,4 +1,5 @@
 const hre = require("hardhat");
+const { getSigners, resetFork, impersonateAccount, stopImpersonating, getContractWithSigner, getRpcUrl } = require("./network");
 
 /**
  * Simple Mint event injection demo.
@@ -38,20 +39,6 @@ const TOKEN_ABI = [
   }
 ];
 
-async function setBalance(address) {
-  await hre.network.provider.send("hardhat_setBalance", [address, "0x56BC75E2D63100000"]);
-}
-
-async function impersonate(address) {
-  await hre.network.provider.send("hardhat_impersonateAccount", [address]);
-  await setBalance(address);
-  return await hre.ethers.getSigner(address);
-}
-
-async function stopImpersonate(address) {
-  await hre.network.provider.send("hardhat_stopImpersonatingAccount", [address]);
-}
-
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -70,18 +57,16 @@ async function main() {
 
   // Reset fork (unless NO_RESET=true)
   if (!noReset) {
-    const upstream = process.env.XDC_RPC_URL || "https://rpc.ankr.com/xdc";
+    const upstream = getRpcUrl();
     console.log(`\n🔄 Resetting fork from ${upstream}...`);
-    await hre.network.provider.send("hardhat_reset", [
-      { forking: { jsonRpcUrl: upstream } }
-    ]);
+    await resetFork(upstream);
     console.log(`✅ Fork reset complete`);
   } else {
     console.log(`\n⏭️ Skipping fork reset (NO_RESET=true)`);
   }
 
   // Get signers - use first 3 signers as minters
-  const signers = await hre.ethers.getSigners();
+  const signers = await getSigners();
   const minterAddresses = [signers[0].address, signers[1].address, signers[2].address];
 
   console.log(`\n👤 Minter Addresses:`);
@@ -89,8 +74,8 @@ async function main() {
 
   // Step 1: Impersonate masterMinter and configure 3 minter addresses
   console.log(`\n🔧 Step 1: Configuring 3 minters...`);
-  const masterSigner = await impersonate(MASTER_MINTER_ADDRESS);
-  const tokenAsMaster = new hre.ethers.Contract(USDC_ADDRESS, TOKEN_ABI, masterSigner);
+  const masterSigner = await impersonateAccount(MASTER_MINTER_ADDRESS);
+  const tokenAsMaster = getContractWithSigner(USDC_ADDRESS, masterSigner, TOKEN_ABI);
 
   for (let i = 0; i < minterAddresses.length; i++) {
     try {
@@ -101,13 +86,13 @@ async function main() {
       console.log(`   ⚠️ configureMinter for Minter${i + 1} failed: ${e.message?.substring(0, 80)}`);
     }
   }
-  await stopImpersonate(MASTER_MINTER_ADDRESS);
+  await stopImpersonating(MASTER_MINTER_ADDRESS);
 
   // Step 2: Mint from each minter
   console.log(`\n🪙 Step 2: Minting from 3 minters...`);
   for (let i = 0; i < minterAddresses.length; i++) {
     try {
-      const tokenAsMinter = new hre.ethers.Contract(USDC_ADDRESS, TOKEN_ABI, signers[i]);
+      const tokenAsMinter = getContractWithSigner(USDC_ADDRESS, signers[i], TOKEN_ABI);
       const txM = await tokenAsMinter.mint(signers[3].address, MINT_AMOUNT);
       const rM = await txM.wait();
       console.log(`   ✅ Minter${i + 1} minted ${MINT_AMOUNT} USDC!`);

@@ -1,4 +1,5 @@
 const hre = require("hardhat");
+const { getSigners, resetFork, impersonateAccount, stopImpersonating, getContractWithSigner, getRpcUrl } = require("./network");
 
 /**
  * Simple Transfer event injection demo.
@@ -54,20 +55,6 @@ const TOKEN_ABI = [
   }
 ];
 
-async function setBalance(address) {
-  await hre.network.provider.send("hardhat_setBalance", [address, "0x56BC75E2D63100000"]);
-}
-
-async function impersonate(address) {
-  await hre.network.provider.send("hardhat_impersonateAccount", [address]);
-  await setBalance(address);
-  return await hre.ethers.getSigner(address);
-}
-
-async function stopImpersonate(address) {
-  await hre.network.provider.send("hardhat_stopImpersonatingAccount", [address]);
-}
-
 async function main() {
   const noReset = process.env.NO_RESET === "true";
 
@@ -80,22 +67,20 @@ async function main() {
 
   // Reset fork (unless NO_RESET=true)
   if (!noReset) {
-    const upstream = process.env.XDC_RPC_URL || "https://rpc.ankr.com/xdc";
+    const upstream = getRpcUrl();
     console.log(`\n🔄 Resetting fork from ${upstream}...`);
-    await hre.network.provider.send("hardhat_reset", [
-      { forking: { jsonRpcUrl: upstream } }
-    ]);
+    await resetFork(upstream);
     console.log(`✅ Fork reset complete`);
   } else {
     console.log(`\n⏭️ Skipping fork reset (NO_RESET=true)`);
   }
 
   // Get signers
-  const [signer0, signer1] = await hre.ethers.getSigners();
+  const [signer0, signer1] = await getSigners();
   console.log(`\n👤 Signer0: ${signer0.address}`);
   console.log(`   Signer1: ${signer1.address}`);
 
-  const token = new hre.ethers.Contract(USDC_ADDRESS, TOKEN_ABI, signer0);
+  const token = getContractWithSigner(USDC_ADDRESS, signer0, TOKEN_ABI);
 
   // Step 1: Check balance and mint if needed
   console.log(`\n💰 Step 1: Checking signer0 balance...`);
@@ -106,15 +91,15 @@ async function main() {
       console.log(`   ⚠️ Insufficient balance, minting via masterMinter...`);
       
       // Impersonate masterMinter and configure signer0 as minter
-      const masterSigner = await impersonate(MASTER_MINTER_ADDRESS);
-      const tokenAsMaster = new hre.ethers.Contract(USDC_ADDRESS, TOKEN_ABI, masterSigner);
+      const masterSigner = await impersonateAccount(MASTER_MINTER_ADDRESS);
+      const tokenAsMaster = getContractWithSigner(USDC_ADDRESS, masterSigner, TOKEN_ABI);
       
       try {
         const txC = await tokenAsMaster.configureMinter(signer0.address, TRANSFER_AMOUNT * 10000n);
         await txC.wait();
         console.log(`   ✅ Configured signer0 as minter`);
       } finally {
-        await stopImpersonate(MASTER_MINTER_ADDRESS);
+        await stopImpersonating(MASTER_MINTER_ADDRESS);
       }
       
       // Mint to signer0
