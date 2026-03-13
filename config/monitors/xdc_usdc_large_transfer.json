@@ -1,6 +1,5 @@
 {
   "name": "XDC USDC Large Transfer Monitor",
-  "description": "Monitor for large transfers exceeding 0.1% of total supply",
   "networks": ["xdc_mainnet_fork_local"],
   "paused": false,
   "addresses": [

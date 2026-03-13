@@ -66,6 +66,19 @@ const TOKEN_ABI = [
   }
 ];
 
+// Helper function to get totalSupply with retry for hardfork errors
+async function getTotalSupplySafe(token) {
+  try {
+    return await token.totalSupply();
+  } catch (error) {
+    if (error.message && error.message.includes("hardfork")) {
+      console.log("   ⚠️ hardfork error, retrying with latest blockTag...");
+      return await token.totalSupply({ blockTag: "latest" });
+    }
+    throw error;
+  }
+}
+
 async function main() {
   const noReset = process.env.NO_RESET === "true";
 
@@ -82,6 +95,8 @@ async function main() {
     console.log(`\n🔄 Resetting fork from ${upstream}...`);
     await resetFork(upstream);
     console.log(`✅ Fork reset complete`);
+    // Wait for fork to stabilize
+    await new Promise(resolve => setTimeout(resolve, 3000));
   } else {
     console.log(`\n⏭️ Skipping fork reset (NO_RESET=true)`);
   }
@@ -93,17 +108,11 @@ async function main() {
 
   const token = getContractWithSigner(USDC_ADDRESS, signer0, TOKEN_ABI);
 
-  // Step 1: Check totalSupply and calculate threshold
-  console.log(`\n📊 Step 1: Checking totalSupply...`);
-  const totalSupply = await token.totalSupply();
-  const totalSupplyFormatted = hre.ethers.formatUnits(totalSupply, 6);
-  const threshold = (totalSupply * BigInt(1)) / BigInt(1000); // 0.1%
-  const thresholdFormatted = hre.ethers.formatUnits(threshold, 6);
-  
-  console.log(`   totalSupply: ${totalSupplyFormatted} USDC`);
-  console.log(`   0.1% threshold: ${thresholdFormatted} USDC`);
-  console.log(`   Transfer amount: ${LARGE_TRANSFER_AMOUNT} USDC`);
-  console.log(`   Will trigger alert: ${LARGE_TRANSFER_AMOUNT > threshold ? 'YES 🚨' : 'NO'}`);
+  // Step 1: Check current block
+  console.log(`\n📊 Step 1: Checking current block...`);
+  const provider = hre.ethers.provider;
+  const currentBlock = await provider.getBlockNumber();
+  console.log(`   Current block: ${currentBlock}`);
 
   // Step 2: Check balance and mint if needed
   console.log(`\n💰 Step 2: Checking signer0 balance...`);

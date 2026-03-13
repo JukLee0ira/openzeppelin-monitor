@@ -14,7 +14,7 @@
  *   - RPC_URL: RPC 端点 (从环境变量读取)
  */
 
-const hre = require("hardhat");
+const { ethers } = require("ethers");
 const path = require("path");
 
 // 加载环境变量
@@ -23,6 +23,9 @@ require("dotenv").config({ path: path.resolve(__dirname, "../../../config/influx
 
 // USDC 合约地址 (XDC Mainnet)
 const USDC_ADDRESS = process.env.USDC_ADDRESS || "0xfa2958cb79b0491cc627c1557f441ef849ca8eb1";
+
+// RPC URL
+const RPC_URL = process.env.XDC_RPC_URL || "http://127.0.0.1:8545";
 
 // 阈值百分比 (0.1%)
 const THRESHOLD_PERCENTAGE = parseFloat(process.env.LARGE_TRANSFER_THRESHOLD || "0.1");
@@ -45,7 +48,7 @@ const SUPPLY_ABI = [
  * 获取当前 totalSupply
  */
 async function getTotalSupply(provider) {
-  const usdc = new hre.ethers.Contract(USDC_ADDRESS, SUPPLY_ABI, provider);
+  const usdc = new ethers.Contract(USDC_ADDRESS, SUPPLY_ABI, provider);
   const supply = await usdc.totalSupply();
   return supply;
 }
@@ -54,7 +57,7 @@ async function getTotalSupply(provider) {
  * 格式化 USDC 金额
  */
 function formatUSDC(value) {
-  return hre.ethers.formatUnits(value, USDC_DECIMALS);
+  return ethers.formatUnits(value, USDC_DECIMALS);
 }
 
 /**
@@ -94,9 +97,17 @@ async function main() {
         process.exit(0);
       }
 
-      // 获取当前 totalSupply
-      const provider = hre.ethers.provider;
-      const totalSupply = await getTotalSupply(provider);
+      // 创建 provider 并获取 totalSupply
+      const provider = new ethers.JsonRpcProvider(RPC_URL);
+      let totalSupply;
+      try {
+        totalSupply = await getTotalSupply(provider);
+      } catch (e) {
+        console.error("[Large Transfer] Failed to get totalSupply:", e.message);
+        // 继续处理，使用默认阈值
+        totalSupply = BigInt(0);
+      }
+      
       const threshold = (totalSupply * BigInt(Math.floor(THRESHOLD_PERCENTAGE * 10))) / BigInt(1000);
       
       console.error(`[Large Transfer] totalSupply: ${formatUSDC(totalSupply)} USDC`);
@@ -112,7 +123,7 @@ async function main() {
         const toAddr = args[1] || "unknown";
         const value = BigInt(args[2] || "0");
 
-        if (value > threshold) {
+        if (totalSupply > 0 && value > threshold) {
           largeTransfersFound = true;
           
           const percentage = (Number(value) / Number(totalSupply) * 100).toFixed(4);
@@ -158,4 +169,3 @@ if (require.main === module) {
 }
 
 module.exports = { main };
-
