@@ -13,6 +13,7 @@
     "demo:emit:mint": "hardhat run ./scripts/demoMint.js --network localhost",
     "demo:emit:burn": "hardhat run ./scripts/demoBurn.js --network localhost",
     "demo:emit:transfer": "hardhat run ./scripts/demoTransfer.js --network localhost",
+    "demo:emit:large": "hardhat run ./scripts/demoLargeTransfer.js --network localhost",
     "poll:supply": "hardhat run ./scripts/pollSupply.js --network localhost",
     "poll:supply:remote": "hardhat run ./scripts/pollSupply.js --network xdc_mainnet",
     "clear:supply": "hardhat run ./scripts/clearSupply.js --network localhost",
