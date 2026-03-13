@@ -1,0 +1,33 @@
+{
+  "name": "XDC USDC Large Transfer Monitor",
+  "description": "Monitor for large transfers exceeding 0.1% of total supply",
+  "networks": ["xdc_mainnet_fork_local"],
+  "paused": false,
+  "addresses": [
+    {
+      "address": "0xfa2958cb79b0491cc627c1557f441ef849ca8eb1",
+      "contract_spec": [
+        {
+          "anonymous": false,
+          "inputs": [
+            { "indexed": true, "internalType": "address", "name": "from", "type": "address" },
+            { "indexed": true, "internalType": "address", "name": "to", "type": "address" },
+            { "indexed": false, "internalType": "uint256", "name": "value", "type": "uint256" }
+          ],
+          "name": "Transfer",
+          "type": "event"
+        }
+      ]
+    }
+  ],
+  "match_conditions": {
+    "events": [
+      { "signature": "Transfer(address,address,uint256)", "expression": null }
+    ],
+    "transactions": [],
+    "functions": []
+  },
+  "trigger_conditions": [],
+  "triggers": ["large_transfer_alert"]
+}
+

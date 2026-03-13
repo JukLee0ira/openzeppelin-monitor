@@ -1,0 +1,13 @@
+{
+  "large_transfer_alert": {
+    "name": "Large Transfer Alert",
+    "trigger_type": "script",
+    "config": {
+      "language": "JavaScript",
+      "script_path": "./config/triggers/scripts/large_transfer.js",
+      "arguments": null,
+      "timeout_ms": 30000
+    }
+  }
+}
+
