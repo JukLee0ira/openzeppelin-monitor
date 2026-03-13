@@ -1,0 +1,54 @@
+{
+  "name": "XDC USDC Permissions (RoleGranted/RoleRevoked)",
+  "networks": ["xdc_mainnet_fork_local"],
+  "paused": false,
+  "addresses": [
+    {
+      "address": "0xfa2958cb79b0491cc627c1557f441ef849ca8eb1",
+      "contract_spec": [
+        {
+          "anonymous": false,
+          "inputs": [
+            { "indexed": true, "internalType": "bytes32", "name": "role", "type": "bytes32" },
+            { "indexed": true, "internalType": "address", "name": "account", "type": "address" },
+            { "indexed": true, "internalType": "address", "name": "sender", "type": "address" }
+          ],
+          "name": "RoleGranted",
+          "type": "event"
+        },
+        {
+          "anonymous": false,
+          "inputs": [
+            { "indexed": true, "internalType": "bytes32", "name": "role", "type": "bytes32" },
+            { "indexed": true, "internalType": "address", "name": "account", "type": "address" },
+            { "indexed": true, "internalType": "address", "name": "sender", "type": "address" }
+          ],
+          "name": "RoleRevoked",
+          "type": "event"
+        },
+        {
+          "anonymous": false,
+          "inputs": [
+            { "indexed": true, "internalType": "bytes32", "name": "role", "type": "bytes32" },
+            { "indexed": true, "internalType": "address", "name": "account", "type": "address" },
+            { "indexed": true, "internalType": "address", "name": "sender", "type": "address" }
+          ],
+          "name": "RoleAdminChanged",
+          "type": "event"
+        }
+      ]
+    }
+  ],
+  "match_conditions": {
+    "functions": [],
+    "events": [
+      { "signature": "RoleGranted(bytes32,address,address)", "expression": null },
+      { "signature": "RoleRevoked(bytes32,address,address)", "expression": null },
+      { "signature": "RoleAdminChanged(bytes32,address,address)", "expression": null }
+    ],
+    "transactions": []
+  },
+  "trigger_conditions": [],
+  "triggers": ["xdc_console"]
+}
+
